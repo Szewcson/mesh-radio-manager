@@ -1,0 +1,207 @@
+"""Administrator CLI. It is complete without the optional web dashboard."""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+from typing import Any
+
+import yaml
+
+from . import __version__
+from .assignments import assign, configuration_lock, load, save, validate
+from .diagnostics import report
+from .errors import ManagerError
+from .integration import install as install_integration
+from .meshtastic import (
+    MESHTASTIC_CONFIG,
+    MESHTASTIC_UNIT,
+    backup_config,
+    install_package,
+    package_versions,
+    prepare_runtime_config as prepare_meshtastic,
+    restore_config,
+    run_daemon,
+    upgrade,
+)
+from .openhop import OPENHOP_UNIT, installed as openhop_installed, metadata as openhop_metadata, prepare_runtime_config as prepare_openhop
+from .profiles import MESHTASTIC_PROFILES
+from .services import action, logs, state
+from .usb import enumerate_devices, parse_selector
+from .web import serve
+
+
+def _emit(value: Any, as_json: bool) -> None:
+    if as_json or isinstance(value, (dict, list)):
+        print(json.dumps(value, indent=2, sort_keys=False, default=str))
+    elif value is not None:
+        print(value)
+
+
+def _require_stopped() -> None:
+    running = [unit for unit in (OPENHOP_UNIT, MESHTASTIC_UNIT) if state(unit)["active"] in {"active", "activating", "reloading"}]
+    if running:
+        raise ManagerError(
+            "Stop " + ", ".join(running) + " before changing assignments; this prevents live radio hand-off"
+        )
+
+
+def _load_lora(path: str | None) -> dict[str, Any] | None:
+    if not path:
+        return None
+    try:
+        data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise ManagerError(f"Cannot load verified Lora mapping: {error}") from error
+    if not isinstance(data, dict):
+        raise ManagerError("Verified Lora mapping must be a YAML mapping")
+    return data
+
+
+def _status() -> dict[str, Any]:
+    return {
+        "manager_version": __version__,
+        "openhop": {**openhop_metadata(), "service": state(OPENHOP_UNIT)},
+        "meshtasticd": {"service": state(MESHTASTIC_UNIT), "packages": package_versions()},
+        "assignments": load().get("assignments", {}),
+    }
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(prog="mesh-radio", description="Independent USB radio manager for openHop and meshtasticd")
+    root.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    commands = root.add_subparsers(dest="command", required=True)
+    commands.add_parser("status")
+    commands.add_parser("radios")
+    assign_parser = commands.add_parser("assign")
+    assign_parser.add_argument("role", choices=("openhop", "meshtastic"))
+    assign_parser.add_argument("device", help="serial:<value>, port:<controller/ports>, or path:<runtime-topology>")
+    assign_parser.add_argument("--profile", required=True, choices=("pinedio", "meshtadpole", "generic-ch341-sx1262"))
+    assign_parser.add_argument("--verified-lora", help="YAML pin mapping for generic-ch341-sx1262 only")
+    commands.add_parser("verify")
+    commands.add_parser("diagnose")
+    commands.add_parser("update")
+    commands.add_parser("install-integration").add_argument("--web", action="store_true")
+
+    openhop = commands.add_parser("openhop").add_subparsers(dest="openhop_command", required=True)
+    for command in ("status", "start", "stop", "restart"):
+        openhop.add_parser(command)
+
+    meshtastic = commands.add_parser("meshtastic").add_subparsers(dest="meshtastic_command", required=True)
+    install = meshtastic.add_parser("install")
+    install.add_argument("--channel", default="beta", choices=("alpha", "beta"))
+    for command in ("status", "start", "stop", "restart", "configure", "backup"):
+        meshtastic.add_parser(command)
+    restore = meshtastic.add_parser("restore")
+    restore.add_argument("backup")
+    upgrade_parser = meshtastic.add_parser("upgrade")
+    upgrade_parser.add_argument("--yes", action="store_true")
+
+    log_parser = commands.add_parser("logs")
+    log_parser.add_argument("service", choices=("openhop", "meshtastic"))
+    log_parser.add_argument("--lines", type=int, default=100)
+    web = commands.add_parser("web").add_subparsers(dest="web_command", required=True)
+    web.add_parser("serve")
+    web.add_parser("enable")
+    internal = commands.add_parser("internal").add_subparsers(dest="internal_command", required=True)
+    internal.add_parser("prepare-openhop")
+    internal.add_parser("run-meshtastic")
+    return root
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parser().parse_args(argv)
+    try:
+        if args.command == "status":
+            value: Any = _status()
+        elif args.command == "radios":
+            assignments = load().get("assignments", {})
+            resolved = validate(load(), enumerate_devices(), require_present=False)
+            del resolved
+            value = []
+            for device in enumerate_devices():
+                role = None
+                for candidate, assignment in assignments.items():
+                    identity = assignment.get("identity", {}) if isinstance(assignment, dict) else {}
+                    if identity.get("serial") == device.serial or identity.get("port_path") == device.port_path:
+                        role = candidate
+                value.append(device.public_dict(role))
+        elif args.command == "assign":
+            _require_stopped()
+            devices = enumerate_devices()
+            device = parse_selector(args.device, devices)
+            if args.role == "openhop" and args.profile not in {"pinedio", "generic-ch341-sx1262"}:
+                raise ManagerError("MeshTadpole is not an openHop preset; use official openHop hardware configuration")
+            value = assign(args.role, device, args.profile, devices, lora=_load_lora(args.verified_lora))
+        elif args.command == "verify":
+            if not openhop_installed():
+                raise ManagerError("Official openHop installation is missing; this manager will not recreate it")
+            with configuration_lock():
+                value = {
+                    "openhop": openhop_metadata(),
+                    "resolved_assignments": {role: device.public_dict() for role, device in validate(load(), enumerate_devices()).items()},
+                    "profiles": MESHTASTIC_PROFILES,
+                }
+        elif args.command == "diagnose":
+            value = report()
+        elif args.command == "install-integration":
+            install_integration(enable_web=args.web)
+            value = {"installed": True, "web_enabled": args.web}
+        elif args.command == "openhop":
+            if args.openhop_command == "status":
+                value = {**openhop_metadata(), "service": state(OPENHOP_UNIT)}
+            else:
+                action(OPENHOP_UNIT, args.openhop_command)
+                value = state(OPENHOP_UNIT)
+        elif args.command == "meshtastic":
+            if args.meshtastic_command == "install":
+                value = install_package(args.channel)
+            elif args.meshtastic_command == "status":
+                value = {"service": state(MESHTASTIC_UNIT), "packages": package_versions()}
+            elif args.meshtastic_command == "configure":
+                value = {"effective_config": str(prepare_meshtastic())}
+            elif args.meshtastic_command == "backup":
+                backup = backup_config()
+                value = {"backup": str(backup) if backup else None}
+            elif args.meshtastic_command == "restore":
+                restore_config(Path(args.backup))
+                value = {"restored": args.backup, "destination": str(MESHTASTIC_CONFIG)}
+            elif args.meshtastic_command == "upgrade":
+                value = {"backup": str(upgrade(assume_yes=args.yes)) if args.yes else package_versions()}
+                if not args.yes:
+                    raise ManagerError(
+                        f"meshtasticd installed={value['installed']}, candidate={value['candidate']}; rerun with --yes"
+                    )
+            else:
+                action(MESHTASTIC_UNIT, args.meshtastic_command)
+                value = state(MESHTASTIC_UNIT)
+        elif args.command == "logs":
+            value = logs(OPENHOP_UNIT if args.service == "openhop" else MESHTASTIC_UNIT, args.lines)
+        elif args.command == "web":
+            if args.web_command == "enable":
+                action("mesh-radio-manager-web.service", "enable")
+                action("mesh-radio-manager-web.service", "start")
+                value = state("mesh-radio-manager-web.service")
+            else:
+                serve()
+                return 0
+        elif args.command == "internal":
+            if args.internal_command == "prepare-openhop":
+                value = {"runtime_config": str(prepare_openhop())}
+            else:
+                return run_daemon()
+        elif args.command == "update":
+            result = subprocess.run(["/opt/mesh-radio-manager/update.sh"], text=True)
+            if result.returncode:
+                raise ManagerError("Mesh Radio Manager update failed")
+            value = {"updated": True}
+        else:
+            raise ManagerError("Unhandled command")
+    except ManagerError as error:
+        print(f"mesh-radio: {error}", file=sys.stderr)
+        return 2
+    _emit(value, args.json)
+    return 0

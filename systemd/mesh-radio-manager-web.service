@@ -1,0 +1,12 @@
+# Reference copy; installation writes the equivalent manager-owned systemd unit.
+[Unit]
+Description=Mesh Radio Manager diagnostics UI
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/mesh-radio web serve
+Restart=on-failure
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

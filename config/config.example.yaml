@@ -1,0 +1,12 @@
+# Device address is deliberately absent: it changes after USB reconnects/reboots.
+version: 1
+assignments: {}
+meshtastic:
+  # beta or alpha. A channel change never upgrades the package automatically.
+  channel: beta
+  # Extra verified meshtasticd YAML. The Lora block is intentionally forbidden;
+  # USB selection and hardware pins belong to the assignment/profile layer.
+  advanced: {}
+web:
+  host: 127.0.0.1
+  port: 8001

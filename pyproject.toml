@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mesh-radio-manager"
+version = "0.1.0"
+description = "Independent USB LoRa radio assignments for openHop and meshtasticd"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["PyYAML>=6.0"]
+license = {text = "MIT"}
+authors = [{name = "Mesh Radio Manager contributors"}]
+
+[project.scripts]
+mesh-radio = "mesh_radio_manager.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

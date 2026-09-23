@@ -25,67 +25,105 @@ Debian LXC
 
 ## Install
 
-### Proxmox host installer (recommended)
+### Verified Proxmox host installer (recommended)
 
-Run this once from the **Proxmox host shell** as root:
-
-```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Szewcson/mesh-radio-manager/main/scripts/proxmox-install.sh)"
-```
-
-It follows the familiar Proxmox VE Helper-Scripts interactive style. It invokes
-the official upstream openHop Proxmox installer—without copying or changing
-it—detects the new CTID, then uses `pct exec` to install Mesh Radio Manager and
-Meshtastic alpha in that LXC. The official installer configures the privileged
-LXC and USB bus passthrough; this helper never edits the openHop checkout. For
-an existing CTID it idempotently verifies/reuses the official host quirks:
-CH341 udev permissions, `c 189:* rwm`, and the `/dev/bus/usb` LXC bind mount.
-It refuses an unprivileged LXC rather than attempting an unsafe conversion.
-
-For an existing official openHop LXC, run this from the Proxmox host instead:
+Use a versioned release bundle, not a mutable `main` branch script. Download
+the bundle and verify its GitHub build provenance before extracting it:
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/Szewcson/mesh-radio-manager/main/scripts/proxmox-install.sh)" -- --ctid <CTID> --channel alpha
+VERSION=v0.1.0
+curl --fail --location --proto '=https' --tlsv1.2 -O \
+  "https://github.com/Szewcson/mesh-radio-manager/releases/download/${VERSION}/mesh-radio-manager-${VERSION}.tar.gz"
+gh attestation verify "mesh-radio-manager-${VERSION}.tar.gz" -R Szewcson/mesh-radio-manager
+tar -xzf "mesh-radio-manager-${VERSION}.tar.gz"
+cd mesh-radio-manager
 ```
 
-Use `--no-meshtastic` to install only the manager integration.
+From the **Proxmox host shell** as root, create a new official openHop LXC and
+install the verified manager package bundled with that release:
+
+```bash
+./scripts/proxmox-install.sh \
+  --manager-package ./mesh-radio-manager_0.1.0-1_all.deb \
+  --channel alpha
+```
+
+For an existing official openHop LXC, provide its CTID instead:
+
+```bash
+./scripts/proxmox-install.sh --ctid 103 \
+  --manager-package ./mesh-radio-manager_0.1.0-1_all.deb \
+  --channel alpha --unattended
+```
+
+The helper reuses the official openHop installer without copying or modifying
+it. It verifies PVE 8.4+, a Debian 13+ privileged openHop LXC, architecture, and
+USB passthrough before changing the LXC. It tags successful containers
+`mesh-radio-manager`. The default profile uses Meshtastic alpha; use
+`--advanced` to choose the Meshtastic add-on/channel interactively, or use
+explicit flags with `--unattended` for automation. A published release bundle
+also contains `apt-source.env`; after you verify the bundle attestation, the
+helper automatically pins the signed GitHub Pages APT repository. Future
+`mesh-radio manager update` calls then download the Debian package from that
+repository rather than from a mutable script.
 
 ### Proxmox-style operator helpers
 
 The host installer adds `mesh-radio-pve --ctid <CTID>` to the Proxmox host: a
 terminal control panel for status, radios, validation, redacted diagnostics,
-logs, service restarts, LXC shell access, and the one-command update. The LXC
-itself displays a compact login banner and provides `mesh-radio-menu` with the
-same operations. These are intentionally terminal helpers; this project does
-not patch Proxmox's GUI navigation or impersonate an official Community
-Scripts catalogue entry.
+logs, service restarts, LXC shell access, and the one-command update. It also
+supports tagged bulk updates and optional snapshot backups:
+
+```bash
+mesh-radio-pve --all --update --yes --backup --backup-storage local
+```
+
+Only containers tagged `mesh-radio-manager` are selected; this project never
+uses Community Scripts’ tags. The LXC itself displays a compact login banner
+and provides `mesh-radio-menu`. These are intentionally terminal helpers; this
+project does not patch Proxmox's GUI navigation or impersonate an official
+Community Scripts catalogue entry.
+
+The host helper preserves a stopped LXC's state, validates backup storage, and
+restores the exact pre-update snapshot if an update fails. Use
+`mesh-radio-pve --all --dry-run` to inspect candidates without changing them,
+and `mesh-radio-pve --doctor` after removing LXCs. Once no manager-tagged LXC
+remains, `mesh-radio-pve --prune --yes` removes the no-longer-needed host helper.
 
 ### Manual LXC installer
 
-Create the LXC with the official openHop installer. Inside that LXC, clone or
-download a release of this project, then run:
+Create the LXC with the official openHop installer. Inside that LXC, install a
+verified release package:
 
 ```bash
-sudo ./install.sh
+sudo apt-get install ./mesh-radio-manager_0.1.0-1_all.deb
 ```
 
-The installer refuses to recreate openHop when it is absent. It preserves
-`/etc/openhop_repeater/config.yaml`, writes manager state below
-`/etc/mesh-radio-manager`, `/var/lib/mesh-radio-manager`, and
+The package preserves `/etc/openhop_repeater/config.yaml`, writes manager state
+below `/etc/mesh-radio-manager`, `/var/lib/mesh-radio-manager`, and
 `/var/log/mesh-radio-manager`, and installs systemd **drop-ins** only. It does
-not change `/root/openhop-repeater` or `/opt/openhop_repeater`.
+not change `/root/openhop-repeater` or `/opt/openhop_repeater`. The checked-out
+`./install.sh` remains a developer/local path: it creates and validates a full
+new generation before atomically switching new manager processes to it.
 
-For a published release the same installer can be used as:
+When installing manually from the verified release bundle, configure the
+matching signed source before using self-update:
 
 ```bash
-curl -fsSL https://github.com/Szewcson/mesh-radio-manager/releases/latest/download/install.sh | sudo bash
+sudo mesh-radio-apt-repository --manifest ./apt-source.env
 ```
 
-The release installer downloads this project only; it never vendors openHop.
+The helper parses that manifest as data, downloads the archive public key over
+HTTPS, and verifies its exact fingerprint before it writes an APT source.
 
-`./install.sh --install-meshtastic --channel beta` optionally configures the
-current Meshtastic upstream package channel. It never changes RF region, power,
-or PSKs.
+Install MeshtasticD separately after package installation:
+
+```bash
+sudo apt-get install -y gnupg
+sudo mesh-radio meshtastic install --channel alpha
+```
+
+This never changes RF region, power, or PSKs.
 
 ## First deployment
 
@@ -154,7 +192,8 @@ mesh-radio diagnose > mesh-radio-diagnose.txt
 mesh-radio logs openhop
 mesh-radio logs meshtastic
 mesh-radio meshtastic upgrade        # displays versions, backs up config, asks
-mesh-radio update                    # official openHop, this project, meshtasticd
+mesh-radio update                    # official openHop, signed manager package, meshtasticd
+mesh-radio manager update            # signed manager Debian package only
 ```
 
 `mesh-radio update` is the one-command LXC update path. It runs the official
@@ -162,6 +201,18 @@ mesh-radio update                    # official openHop, this project, meshtasti
 Manager and meshtasticd. It does not copy, replace, or patch that openHop
 updater. Before and after updating, `mesh-radio verify` reports the exact
 upstream branch, commit, and whether `/root/openhop-repeater` is clean.
+
+`mesh-radio manager update` updates only Mesh Radio Manager through APT. It
+refuses non-package installations and serializes installation/update work with
+an exclusive lock. The verified GitHub release bundle configures the signed
+GitHub Pages repository automatically through the Proxmox installer; direct
+`.deb` installation is intended for initial deployment or a controlled offline
+update. It does not run the openHop updater or upgrade MeshtasticD.
+
+The tag-release workflow builds the package, creates GitHub provenance
+attestations, signs the APT metadata, publishes the static archive on GitHub
+Pages, and then creates the GitHub Release. Its one-time repository-owner setup
+is documented in [docs/apt-repository.md](docs/apt-repository.md).
 
 The final Meshtastic phase shows the installed and candidate meshtasticd versions,
 then upgrades meshtasticd automatically after updating the manager. The
@@ -172,11 +223,12 @@ separate from the official openHop update command.
 To remove only this project:
 
 ```bash
-sudo ./uninstall.sh
+sudo apt remove mesh-radio-manager
 ```
 
-This removes manager-owned files/drop-ins and leaves openHop, meshtasticd, and
-their configurations in place.
+This removes manager-owned integration and leaves openHop, meshtasticd, and
+their configurations in place. The checked-out `./uninstall.sh` is only for a
+developer/local staged installation.
 
 ## Systemd design and limitation
 

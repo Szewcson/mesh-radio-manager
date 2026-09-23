@@ -3,9 +3,14 @@
 set -eu
 
 [ "$(id -u)" -eq 0 ] || { echo "Run uninstall as root." >&2; exit 1; }
-if command -v mesh-radio >/dev/null 2>&1; then
+manager_python=/opt/mesh-radio-manager/venv/bin/python
+if [ -x "$manager_python" ]; then
     # Removing drop-ins requires a reload; do not edit any vendor unit.
-    /opt/mesh-radio-manager/venv/bin/python -c 'from mesh_radio_manager.integration import uninstall; uninstall()' || true
+    "$manager_python" -c 'from mesh_radio_manager.integration import uninstall; uninstall()' || true
+fi
+compat_launcher=/usr/bin/mesh-radio
+if [ "$(readlink -f "$compat_launcher" 2>/dev/null || true)" = "/opt/mesh-radio-manager/venv/bin/mesh-radio" ]; then
+    rm -f "$compat_launcher"
 fi
 rm -f /usr/local/bin/mesh-radio
 rm -f /usr/local/bin/mesh-radio-menu /etc/profile.d/mesh-radio-manager.sh

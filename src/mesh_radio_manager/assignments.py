@@ -11,6 +11,7 @@ from contextlib import contextmanager
 import fcntl
 import os
 from pathlib import Path
+import stat
 import tempfile
 from typing import Any, Iterator, Mapping
 
@@ -47,13 +48,24 @@ def configuration_lock(lock_path: Path = LOCK_PATH) -> Iterator[None]:
 
 def _atomic_write(path: Path, content: str, mode: int = 0o640) -> None:
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+    try:
+        existing = path.stat()
+    except FileNotFoundError:
+        existing = None
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as output:
             output.write(content)
             output.flush()
             os.fsync(output.fileno())
-        os.chmod(temporary, mode)
+        if existing is None:
+            os.chmod(temporary, mode)
+        else:
+            # Replacement is atomic, but its new inode would otherwise inherit
+            # mkstemp's root-only mode. Keep the repeater-readable policy that
+            # the installer established for the persistent manager config.
+            os.chown(temporary, existing.st_uid, existing.st_gid)
+            os.chmod(temporary, stat.S_IMODE(existing.st_mode))
         os.replace(temporary, path)
     except BaseException:
         try:

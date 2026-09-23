@@ -68,6 +68,22 @@ if ! /usr/local/bin/mesh-radio --version >/dev/null; then
     echo "Mesh Radio Manager CLI launcher validation failed." >&2
     exit 1
 fi
+# Some `pct enter` shells use a root PATH without /usr/local/bin. Provide a
+# compatibility link in /usr/bin, but never replace a binary we do not own.
+compat_launcher=/usr/bin/mesh-radio
+if [ -e "$compat_launcher" ] || [ -L "$compat_launcher" ]; then
+    compat_target=$(readlink -f "$compat_launcher" 2>/dev/null || true)
+    [ "$compat_target" = "$manager_root/venv/bin/mesh-radio" ] || {
+        echo "Refusing to replace existing non-manager launcher: $compat_launcher" >&2
+        exit 1
+    }
+else
+    ln -s /usr/local/bin/mesh-radio "$compat_launcher"
+fi
+if ! "$compat_launcher" --version >/dev/null; then
+    echo "Mesh Radio Manager compatibility launcher validation failed." >&2
+    exit 1
+fi
 install -m 0750 "$manager_root/source/update.sh" "$manager_root/update.sh"
 install -m 0755 "$manager_root/source/scripts/mesh-radio-menu" /usr/local/bin/mesh-radio-menu
 install -m 0644 "$manager_root/source/scripts/mesh-radio-manager-profile.sh" /etc/profile.d/mesh-radio-manager.sh

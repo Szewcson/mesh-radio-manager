@@ -27,6 +27,7 @@ class ProxmoxHelperTests(unittest.TestCase):
         self.assertIn("mesh-radio-menu", install)
         self.assertIn("mesh-radio-manager-profile.sh", install)
         self.assertIn("mesh-radio-menu", uninstall)
+        self.assertIn("compat_launcher=/usr/bin/mesh-radio", uninstall)
         self.assertIn("Update everything", panel)
 
     def test_meshtastic_install_prerequisite_is_included(self) -> None:
@@ -40,6 +41,7 @@ class ProxmoxHelperTests(unittest.TestCase):
         helper = (root / "scripts/proxmox-install.sh").read_text(encoding="utf-8")
         self.assertIn('[ ! -x "$manager_root/venv/bin/mesh-radio" ]', install)
         self.assertIn('/usr/local/bin/mesh-radio --version', install)
+        self.assertIn("compat_launcher=/usr/bin/mesh-radio", install)
         self.assertIn('pct exec "$ctid" -- /usr/local/bin/mesh-radio --version', helper)
 
 

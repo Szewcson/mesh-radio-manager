@@ -3,8 +3,10 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+import os
+import stat
 
-from mesh_radio_manager.assignments import identity_from_device, resolve, validate
+from mesh_radio_manager.assignments import identity_from_device, resolve, save, validate
 from mesh_radio_manager.errors import ManagerError
 from mesh_radio_manager.profiles import effective_meshtastic_config
 from mesh_radio_manager.usb import UsbDevice
@@ -15,6 +17,19 @@ def radio(*, serial: str | None = None, port: str | None = None, bus: int = 4, a
 
 
 class AssignmentTests(unittest.TestCase):
+    def test_atomic_save_preserves_existing_permissions_and_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.yaml"
+            path.write_text("version: 1\nassignments: {}\n", encoding="utf-8")
+            os.chmod(path, 0o640)
+            before = path.stat()
+
+            save({"version": 1, "assignments": {}}, path)
+
+            after = path.stat()
+            self.assertEqual(stat.S_IMODE(after.st_mode), stat.S_IMODE(before.st_mode))
+            self.assertEqual((after.st_uid, after.st_gid), (before.st_uid, before.st_gid))
+
     def test_two_identical_devices_can_use_unique_serials(self) -> None:
         first = radio(serial="PINE", path="4-1")
         second = radio(serial="TADPOLE", address=3, path="4-2")

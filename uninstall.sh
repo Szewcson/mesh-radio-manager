@@ -8,6 +8,7 @@ if command -v mesh-radio >/dev/null 2>&1; then
     /opt/mesh-radio-manager/venv/bin/python -c 'from mesh_radio_manager.integration import uninstall; uninstall()' || true
 fi
 rm -f /usr/local/bin/mesh-radio
+rm -f /usr/local/bin/mesh-radio-menu /etc/profile.d/mesh-radio-manager.sh
 rm -rf /opt/mesh-radio-manager /etc/mesh-radio-manager /var/lib/mesh-radio-manager /var/log/mesh-radio-manager
 systemctl daemon-reload || true
 if systemctl is-enabled --quiet openhop-repeater.service; then

@@ -61,6 +61,8 @@ python3 -m venv "$manager_root/venv"
 "$manager_root/venv/bin/pip" install --upgrade "$manager_root/source"
 ln -sfn "$manager_root/venv/bin/mesh-radio" /usr/local/bin/mesh-radio
 install -m 0750 "$manager_root/source/update.sh" "$manager_root/update.sh"
+install -m 0755 "$manager_root/source/scripts/mesh-radio-menu" /usr/local/bin/mesh-radio-menu
+install -m 0644 "$manager_root/source/scripts/mesh-radio-manager-profile.sh" /etc/profile.d/mesh-radio-manager.sh
 if [ ! -f "$config_dir/config.yaml" ]; then
     install -m 0640 "$manager_root/source/config/config.example.yaml" "$config_dir/config.yaml"
 fi

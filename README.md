@@ -50,6 +50,16 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/Szewcson/mesh-radio-mana
 
 Use `--no-meshtastic` to install only the manager integration.
 
+### Proxmox-style operator helpers
+
+The host installer adds `mesh-radio-pve --ctid <CTID>` to the Proxmox host: a
+terminal control panel for status, radios, validation, redacted diagnostics,
+logs, service restarts, LXC shell access, and the one-command update. The LXC
+itself displays a compact login banner and provides `mesh-radio-menu` with the
+same operations. These are intentionally terminal helpers; this project does
+not patch Proxmox's GUI navigation or impersonate an official Community
+Scripts catalogue entry.
+
 ### Manual LXC installer
 
 Create the LXC with the official openHop installer. Inside that LXC, clone or

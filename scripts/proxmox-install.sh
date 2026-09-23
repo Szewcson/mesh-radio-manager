@@ -7,6 +7,7 @@ set -Eeuo pipefail
 
 OPENHOP_INSTALLER="https://raw.githubusercontent.com/openhop-dev/openhop_repeater/main/scripts/proxmox-install.sh"
 MANAGER_INSTALLER="https://raw.githubusercontent.com/Szewcson/mesh-radio-manager/main/install.sh"
+PVE_MANAGER_SCRIPT="https://raw.githubusercontent.com/Szewcson/mesh-radio-manager/main/scripts/proxmox-manage.sh"
 DEFAULT_CHANNEL="alpha"
 
 RD="\033[01;31m"
@@ -169,6 +170,14 @@ fi
 msg_info "Installing Mesh Radio Manager in LXC ${ctid}"
 pct exec "$ctid" -- bash -lc "$manager_command"
 
+msg_info "Installing Proxmox-host control panel"
+if curl -fsSL "$PVE_MANAGER_SCRIPT" -o /usr/local/sbin/mesh-radio-pve; then
+  chmod 0755 /usr/local/sbin/mesh-radio-pve
+  msg_ok "Host panel installed: mesh-radio-pve --ctid ${ctid}"
+else
+  msg_warn "LXC installation succeeded, but the optional host panel could not be downloaded"
+fi
+
 ip_address="$(pct exec "$ctid" -- hostname -I 2>/dev/null | awk '{print $1}')"
 echo
 msg_ok "Mesh Radio Manager installation complete"
@@ -186,3 +195,4 @@ echo "  mesh-radio verify"
 echo "  systemctl start meshtasticd && systemctl restart openhop-repeater"
 echo
 echo "Later, update all three components from inside the LXC with: mesh-radio update"
+echo "Or open the Proxmox-host control panel: mesh-radio-pve --ctid ${ctid}"

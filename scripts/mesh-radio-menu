@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Friendly post-install menu for the Mesh Radio Manager LXC console.
+set -Eeuo pipefail
+
+[[ $EUID -eq 0 ]] || { echo "Run this menu as root." >&2; exit 1; }
+
+while :; do
+  clear
+  echo "╔══════════════════════════════════════════════╗"
+  echo "║           Mesh Radio Manager LXC             ║"
+  echo "╚══════════════════════════════════════════════╝"
+  echo "  1) Stack status"
+  echo "  2) Detected radios and assignments"
+  echo "  3) Validate assignments"
+  echo "  4) Diagnose (safe for support tickets)"
+  echo "  5) Service logs"
+  echo "  6) Restart radio services"
+  echo "  7) Update openHop, manager, and meshtasticd"
+  echo "  0) Exit"
+  read -r -p " Select: " choice
+  case "$choice" in
+    1) mesh-radio status ;;
+    2) mesh-radio radios ;;
+    3) mesh-radio verify ;;
+    4) mesh-radio diagnose ;;
+    5)
+      read -r -p " Service (openhop/meshtastic): " service
+      case "$service" in openhop|meshtastic) mesh-radio logs "$service" ;; *) echo "Unknown service" ;; esac
+      ;;
+    6)
+      systemctl restart meshtasticd
+      systemctl restart openhop-repeater
+      ;;
+    7) mesh-radio update ;;
+    0) exit 0 ;;
+    *) echo "Unknown selection" ;;
+  esac
+  read -r -p "Press Enter to continue..." _
+done

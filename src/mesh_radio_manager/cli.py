@@ -84,9 +84,7 @@ def parser() -> argparse.ArgumentParser:
     assign_parser.add_argument("--verified-lora", help="YAML pin mapping for generic-ch341-sx1262 only")
     commands.add_parser("verify")
     commands.add_parser("diagnose")
-    update = commands.add_parser("update", help="update Mesh Radio Manager; optionally update meshtasticd")
-    update.add_argument("--meshtastic", action="store_true", help="also upgrade meshtasticd after updating the manager")
-    update.add_argument("--yes", action="store_true", help="confirm the meshtasticd upgrade shown by the preflight")
+    commands.add_parser("update", help="update Mesh Radio Manager and meshtasticd")
     commands.add_parser("install-integration").add_argument("--web", action="store_true")
 
     openhop = commands.add_parser("openhop").add_subparsers(dest="openhop_command", required=True)
@@ -222,15 +220,10 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 return run_daemon()
         elif args.command == "update":
-            command = ["/opt/mesh-radio-manager/update.sh"]
-            if args.meshtastic:
-                command.append("--meshtastic")
-            if args.yes:
-                command.append("--yes")
-            result = subprocess.run(command, text=True)
+            result = subprocess.run(["/opt/mesh-radio-manager/update.sh"], text=True)
             if result.returncode:
                 raise ManagerError("Mesh Radio Manager update failed")
-            value = {"manager_updated": True, "meshtastic_requested": args.meshtastic}
+            value = {"manager_updated": True, "meshtastic_updated": True}
         else:
             raise ManagerError("Unhandled command")
     except ManagerError as error:

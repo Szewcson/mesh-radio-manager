@@ -42,6 +42,8 @@ class CliTests(unittest.TestCase):
         self.assertIn("mesh-radio meshtastic status", script)
         self.assertIn('"$openhop_updater" upgrade', script)
         self.assertIn("/root/openhop-repeater/manage.sh", script)
+        self.assertIn("git clone --depth 1", script)
+        self.assertIn("Szewcson/mesh-radio-manager.git", script)
         self.assertNotIn("openhop-update", script)
 
 

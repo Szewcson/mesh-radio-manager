@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+import subprocess
 from unittest.mock import patch
 
 from mesh_radio_manager.cli import main
@@ -24,6 +25,22 @@ class CliTests(unittest.TestCase):
         ), patch("mesh_radio_manager.cli.set_meshtastic_channel", side_effect=lambda channel: calls.append(f"stored:{channel}")):
             self.assertEqual(main(["meshtastic", "install", "--channel", "alpha"]), 0)
         self.assertEqual(calls, ["guard", "alpha", "stored:alpha"])
+
+    def test_combined_update_forwards_explicit_meshtastic_confirmation(self) -> None:
+        with patch(
+            "mesh_radio_manager.cli.subprocess.run", return_value=subprocess.CompletedProcess([], 0)
+        ) as runner:
+            self.assertEqual(main(["update", "--meshtastic", "--yes"]), 0)
+        self.assertEqual(
+            runner.call_args.args[0],
+            ["/opt/mesh-radio-manager/update.sh", "--meshtastic", "--yes"],
+        )
+
+    def test_update_script_keeps_openhop_outside_the_update_path(self) -> None:
+        script = (Path(__file__).parents[1] / "update.sh").read_text(encoding="utf-8")
+        self.assertIn("meshtastic upgrade --yes", script)
+        self.assertIn("--meshtastic", script)
+        self.assertNotIn("openhop-update", script)
 
 
 if __name__ == "__main__":

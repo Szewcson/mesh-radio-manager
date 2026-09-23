@@ -26,20 +26,22 @@ class CliTests(unittest.TestCase):
             self.assertEqual(main(["meshtastic", "install", "--channel", "alpha"]), 0)
         self.assertEqual(calls, ["guard", "alpha", "stored:alpha"])
 
-    def test_combined_update_forwards_explicit_meshtastic_confirmation(self) -> None:
+    def test_normal_update_runs_combined_manager_and_meshtastic_path(self) -> None:
         with patch(
             "mesh_radio_manager.cli.subprocess.run", return_value=subprocess.CompletedProcess([], 0)
         ) as runner:
-            self.assertEqual(main(["update", "--meshtastic", "--yes"]), 0)
+            self.assertEqual(main(["update"]), 0)
         self.assertEqual(
             runner.call_args.args[0],
-            ["/opt/mesh-radio-manager/update.sh", "--meshtastic", "--yes"],
+            ["/opt/mesh-radio-manager/update.sh"],
         )
 
-    def test_update_script_keeps_openhop_outside_the_update_path(self) -> None:
+    def test_update_script_uses_the_official_openhop_updater_without_copying_it(self) -> None:
         script = (Path(__file__).parents[1] / "update.sh").read_text(encoding="utf-8")
         self.assertIn("meshtastic upgrade --yes", script)
-        self.assertIn("--meshtastic", script)
+        self.assertIn("mesh-radio meshtastic status", script)
+        self.assertIn('"$openhop_updater" upgrade', script)
+        self.assertIn("/root/openhop-repeater/manage.sh", script)
         self.assertNotIn("openhop-update", script)
 
 

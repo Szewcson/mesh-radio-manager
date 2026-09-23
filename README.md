@@ -96,17 +96,17 @@ mesh-radio diagnose > mesh-radio-diagnose.txt
 mesh-radio logs openhop
 mesh-radio logs meshtastic
 mesh-radio meshtastic upgrade        # displays versions, backs up config, asks
-mesh-radio update                    # updates this project only
-mesh-radio update --meshtastic --yes # updates this project, then meshtasticd
+mesh-radio update                    # official openHop, this project, meshtasticd
 ```
 
-Update openHop with its official upstream command. Before and after updating,
-run `mesh-radio verify`; it reports the exact upstream branch, commit, and
-whether `/root/openhop-repeater` is clean. Mesh Radio Manager makes no commit
-and no source change in that checkout.
+`mesh-radio update` is the one-command LXC update path. It runs the official
+`/root/openhop-repeater/manage.sh upgrade` first, then updates Mesh Radio
+Manager and meshtasticd. It does not copy, replace, or patch that openHop
+updater. Before and after updating, `mesh-radio verify` reports the exact
+upstream branch, commit, and whether `/root/openhop-repeater` is clean.
 
-`mesh-radio update --meshtastic` is a preflight only: it shows the installed
-and candidate meshtasticd versions and stops. Add `--yes` to confirm. The
+The final Meshtastic phase shows the installed and candidate meshtasticd versions,
+then upgrades meshtasticd automatically after updating the manager. The
 meshtasticd upgrade backs up `/etc/meshtasticd/config.yaml` under
 `/var/lib/mesh-radio-manager/backups` before calling apt. This is deliberately
 separate from the official openHop update command.

@@ -109,6 +109,14 @@ class ProxmoxHelperTests(unittest.TestCase):
         self.assertIn("actions/upload-pages-artifact@v4", release)
         self.assertIn("actions/deploy-pages@v4", release)
         self.assertIn("APT_GPG_PRIVATE_KEY_BASE64", release)
+        self.assertIn("Remove temporary APT archive key", release)
+        self.assertIn('gpgconf --homedir "$key_home" --kill all', release)
+        self.assertIn("Install signing prerequisites", release)
+        self.assertIn('mktemp -d "${RUNNER_TEMP:?}/mesh-radio-manager-gpg.XXXXXX"', release)
+        documentation = (root / "docs/apt-repository.md").read_text(encoding="utf-8")
+        self.assertIn("external secret manager", documentation)
+        self.assertNotIn("KeePassXC", documentation)
+        self.assertNotIn("quick-generate-key", documentation)
 
 
 if __name__ == "__main__":

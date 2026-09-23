@@ -24,6 +24,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      - name: Install signing prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gnupg
       - name: Import the dedicated APT archive signing key
         env:
           APT_GPG_PRIVATE_KEY_BASE64: ${{ secrets.APT_GPG_PRIVATE_KEY_BASE64 }}
@@ -43,8 +47,12 @@ jobs:
             [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]) ;;
             *) echo "APT_GPG_FINGERPRINT must be a 40-hex-digit primary-key fingerprint." >&2; exit 1 ;;
           esac
-          gnupg_home=$(mktemp -d)
+          # The secret is imported into a job-private ephemeral home only. It
+          # is removed in an always-run cleanup step after archive signing.
+          umask 077
+          gnupg_home=$(mktemp -d "${RUNNER_TEMP:?}/mesh-radio-manager-gpg.XXXXXX")
           chmod 0700 "$gnupg_home"
+          printf 'GNUPGHOME=%s\n' "$gnupg_home" >>"$GITHUB_ENV"
           printf '%s' "$APT_GPG_PRIVATE_KEY_BASE64" | base64 --decode >"$gnupg_home/archive-key.asc"
           GNUPGHOME="$gnupg_home" gpg --batch --import "$gnupg_home/archive-key.asc"
           actual_fingerprint=$(GNUPGHOME="$gnupg_home" gpg --batch --with-colons --list-secret-keys "$APT_GPG_FINGERPRINT" | awk -F: '$1 == "fpr" {print toupper($10); exit}')
@@ -52,14 +60,13 @@ jobs:
             echo "Imported secret key does not match APT_GPG_FINGERPRINT." >&2
             exit 1
           }
-          printf 'GNUPGHOME=%s\nAPT_GPG_FINGERPRINT=%s\n' "$gnupg_home" "$actual_fingerprint" >>"$GITHUB_ENV"
+          printf 'APT_GPG_FINGERPRINT=%s\n' "$actual_fingerprint" >>"$GITHUB_ENV"
       - name: Check tag and install build tools
         run: |
           version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
           test "$GITHUB_REF_NAME" = "v$version"
           python -m pip install --upgrade pip PyYAML
-          sudo apt-get update
-          sudo apt-get install --yes debhelper dh-python gnupg pybuild-plugin-pyproject python3-all python3-setuptools python3-yaml reprepro
+          sudo apt-get install --yes debhelper dh-python pybuild-plugin-pyproject python3-all python3-setuptools python3-yaml reprepro
       - name: Test and build package
         env:
           APT_PUBLIC_URI: ${{ vars.APT_PUBLIC_URI }}
@@ -120,6 +127,19 @@ jobs:
           EOF
           cp -a dist/apt/dists dist/apt/pool dist/pages/apt/
           cp dist/apt/mesh-radio-manager-archive-keyring.asc dist/apt/apt-source.env dist/apt/index.html dist/pages/apt/
+      - name: Remove temporary APT archive key
+        if: always()
+        run: |
+          key_home=${GNUPGHOME:-}
+          if [[ -z "$key_home" ]]; then
+            exit 0
+          fi
+          case "$key_home" in
+            "${RUNNER_TEMP:?}"/mesh-radio-manager-gpg.*) ;;
+            *) echo "Refusing to remove an unexpected GNUPGHOME." >&2; exit 1 ;;
+          esac
+          gpgconf --homedir "$key_home" --kill all || true
+          rm -rf -- "$key_home"
       - name: Attest Debian package
         uses: actions/attest@v4
         with:

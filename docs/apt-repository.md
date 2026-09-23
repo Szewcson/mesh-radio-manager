@@ -26,18 +26,17 @@ Create a dedicated signing key, distinct from any personal identity or SSH key.
 The key is an online package-release key, so use an expiry and plan a rotation;
 do not reuse it for email, commits, or other repositories.
 
-```bash
-gpg --quick-generate-key 'Mesh Radio Manager APT archive' rsa4096 sign 2y
-FINGERPRINT=$(gpg --with-colons --list-keys 'Mesh Radio Manager APT archive' \
-  | awk -F: '$1 == "fpr" { print $10; exit }')
-gpg --armor --export-secret-keys "$FINGERPRINT" | base64 --wrap=0
-printf '\n%s\n' "$FINGERPRINT"
-```
+Keep the base64 private-key export in an external secret manager and provide a
+separately encrypted copy only to the protected GitHub release environment. Do
+not store archive-key material in this repository or a normal workstation GnuPG
+keyring. The release runner imports the environment secret into a job-private
+temporary GnuPG home and removes it after archive signing.
 
-Keep the resulting base64 text private. In the GitHub repository settings:
+In the GitHub repository settings:
 
-- Create a protected `release` environment. Require review by a repository
-  owner and allow only protected tags to deploy to it.
+- Create a protected `release` environment and allow only `v*` release tags to
+  deploy to it. Add a required reviewer when a separate maintainer is
+  available; do not require self-review on a sole-maintainer repository.
 - Add the base64 private-key export as the environment secret
   `APT_GPG_PRIVATE_KEY_BASE64`.
 - Add the printed primary fingerprint as repository variable

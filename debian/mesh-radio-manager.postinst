@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+
+case "$1" in
+    configure)
+        install -d -m 0750 /etc/mesh-radio-manager /var/lib/mesh-radio-manager /var/log/mesh-radio-manager
+        if [ ! -f /etc/mesh-radio-manager/config.yaml ]; then
+            install -m 0640 /usr/share/mesh-radio-manager/config.example.yaml /etc/mesh-radio-manager/config.yaml
+        fi
+        if getent group repeater >/dev/null 2>&1; then
+            chown root:repeater /etc/mesh-radio-manager /etc/mesh-radio-manager/config.yaml
+            chmod 0750 /etc/mesh-radio-manager
+            chmod 0640 /etc/mesh-radio-manager/config.yaml
+        fi
+        if [ -f /etc/openhop_repeater/config.yaml ] && command -v systemctl >/dev/null 2>&1; then
+            /usr/bin/mesh-radio internal migrate-openhop-config
+            /usr/bin/mesh-radio install-integration
+        fi
+        ;;
+esac

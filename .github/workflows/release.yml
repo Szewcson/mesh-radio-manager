@@ -1,0 +1,180 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+# A release may rebuild the persistent APT index from prior GitHub releases.
+# Serializing it prevents two tags from publishing conflicting stable metadata.
+concurrency:
+  group: mesh-radio-manager-apt-repository
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Import the dedicated APT archive signing key
+        env:
+          APT_GPG_PRIVATE_KEY_BASE64: ${{ secrets.APT_GPG_PRIVATE_KEY_BASE64 }}
+          APT_GPG_FINGERPRINT: ${{ vars.APT_GPG_FINGERPRINT }}
+        run: |
+          test -n "$APT_GPG_PRIVATE_KEY_BASE64" || {
+            echo "Missing APT_GPG_PRIVATE_KEY_BASE64 release secret." >&2
+            exit 1
+          }
+          test -n "$APT_GPG_FINGERPRINT" || {
+            echo "Missing APT_GPG_FINGERPRINT repository variable." >&2
+            exit 1
+          }
+          APT_GPG_FINGERPRINT=${APT_GPG_FINGERPRINT// /}
+          APT_GPG_FINGERPRINT=${APT_GPG_FINGERPRINT^^}
+          case "$APT_GPG_FINGERPRINT" in
+            [0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]) ;;
+            *) echo "APT_GPG_FINGERPRINT must be a 40-hex-digit primary-key fingerprint." >&2; exit 1 ;;
+          esac
+          gnupg_home=$(mktemp -d)
+          chmod 0700 "$gnupg_home"
+          printf '%s' "$APT_GPG_PRIVATE_KEY_BASE64" | base64 --decode >"$gnupg_home/archive-key.asc"
+          GNUPGHOME="$gnupg_home" gpg --batch --import "$gnupg_home/archive-key.asc"
+          actual_fingerprint=$(GNUPGHOME="$gnupg_home" gpg --batch --with-colons --list-secret-keys "$APT_GPG_FINGERPRINT" | awk -F: '$1 == "fpr" {print toupper($10); exit}')
+          test "$actual_fingerprint" = "$APT_GPG_FINGERPRINT" || {
+            echo "Imported secret key does not match APT_GPG_FINGERPRINT." >&2
+            exit 1
+          }
+          printf 'GNUPGHOME=%s\nAPT_GPG_FINGERPRINT=%s\n' "$gnupg_home" "$actual_fingerprint" >>"$GITHUB_ENV"
+      - name: Check tag and install build tools
+        run: |
+          version=$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test "$GITHUB_REF_NAME" = "v$version"
+          python -m pip install --upgrade pip PyYAML
+          sudo apt-get update
+          sudo apt-get install --yes debhelper dh-python gnupg pybuild-plugin-pyproject python3-all python3-setuptools python3-yaml reprepro
+      - name: Test and build package
+        env:
+          APT_PUBLIC_URI: ${{ vars.APT_PUBLIC_URI }}
+        run: |
+          PYTHONPATH=src python -m unittest discover -s tests -v
+          chmod 0755 debian/rules debian/tests/smoke
+          dpkg-buildpackage -us -uc -b
+          if [ -z "$APT_PUBLIC_URI" ]; then
+            repository_name=${GITHUB_REPOSITORY#*/}
+            owner=${GITHUB_REPOSITORY_OWNER,,}
+            APT_PUBLIC_URI="https://${owner}.github.io/${repository_name}/apt"
+          fi
+          case "$APT_PUBLIC_URI" in
+            https://[A-Za-z0-9._~:/-]*) ;;
+            *) echo "APT_PUBLIC_URI must be an HTTPS URL without query or fragment." >&2; exit 1 ;;
+          esac
+          APT_PUBLIC_URI=${APT_PUBLIC_URI%/}
+          printf 'APT_URI=%s\nAPT_KEY_URL=%s/mesh-radio-manager-archive-keyring.asc\nAPT_FINGERPRINT=%s\n' \
+            "$APT_PUBLIC_URI" "$APT_PUBLIC_URI" "$APT_GPG_FINGERPRINT" >dist/apt-source.env
+          mkdir -p dist/release/mesh-radio-manager
+          cp ../mesh-radio-manager_*_all.deb dist/
+          cp -a README.md MIGRATION.md install.sh scripts dist/apt-source.env dist/release/mesh-radio-manager/
+          cp dist/mesh-radio-manager_*_all.deb dist/release/mesh-radio-manager/
+          tar -C dist/release -czf "dist/mesh-radio-manager-${GITHUB_REF_NAME}.tar.gz" mesh-radio-manager
+          (
+            cd dist
+            sha256sum mesh-radio-manager_*_all.deb "mesh-radio-manager-${GITHUB_REF_NAME}.tar.gz" apt-source.env >SHA256SUMS
+          )
+      - name: Build signed APT archive from release packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p dist/apt/conf dist/apt-packages dist/pages/apt
+          cp dist/mesh-radio-manager_*_all.deb dist/apt-packages/
+          while IFS= read -r previous_tag; do
+            gh release download "$previous_tag" \
+              --pattern 'mesh-radio-manager_*_all.deb' \
+              --dir dist/apt-packages --skip-existing
+          done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+          cat >dist/apt/conf/distributions <<EOF
+          Origin: Mesh Radio Manager
+          Label: Mesh Radio Manager
+          Codename: stable
+          Suite: stable
+          Architectures: amd64 arm64 all source
+          Components: main
+          Description: Mesh Radio Manager signed package archive
+          SignWith: ${APT_GPG_FINGERPRINT}
+          EOF
+          find dist/apt-packages -type f -name '*.deb' -print0 | sort -z | while IFS= read -r -d '' package; do
+            reprepro --basedir dist/apt includedeb stable "$package"
+          done
+          GNUPGHOME="$GNUPGHOME" gpg --batch --armor --export "$APT_GPG_FINGERPRINT" >dist/apt/mesh-radio-manager-archive-keyring.asc
+          test -s dist/apt/mesh-radio-manager-archive-keyring.asc
+          cp dist/apt-source.env dist/apt/
+          cat >dist/apt/index.html <<'EOF'
+          <!doctype html><html lang="en"><meta charset="utf-8"><title>Mesh Radio Manager APT repository</title><body><h1>Mesh Radio Manager APT repository</h1><p>This is a signed Debian package archive.</p></body></html>
+          EOF
+          cp -a dist/apt/dists dist/apt/pool dist/pages/apt/
+          cp dist/apt/mesh-radio-manager-archive-keyring.asc dist/apt/apt-source.env dist/apt/index.html dist/pages/apt/
+      - name: Attest Debian package
+        uses: actions/attest@v4
+        with:
+          subject-path: 'dist/mesh-radio-manager_*_all.deb'
+      - name: Attest release bundle
+        uses: actions/attest@v4
+        with:
+          subject-path: 'dist/mesh-radio-manager-*.tar.gz'
+      - name: Upload GitHub Pages content
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist/pages
+      - name: Upload release assets for publication
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          if-no-files-found: error
+          path: |
+            dist/*.deb
+            dist/*.tar.gz
+            dist/SHA256SUMS
+            dist/apt-source.env
+
+  deploy-apt-repository:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Publish signed APT archive to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+  publish-release:
+    needs: deploy-apt-repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+          fi

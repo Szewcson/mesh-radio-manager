@@ -1,3 +1,4 @@
+# shellcheck shell=sh
 # Shown only in interactive LXC shells; it contains no credentials or secrets.
 case $- in
   *i*) ;;

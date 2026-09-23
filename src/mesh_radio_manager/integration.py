@@ -14,6 +14,7 @@ OPENHOP_DROPIN = SYSTEMD_DIR / "openhop-repeater.service.d/20-mesh-radio-manager
 MESHTASTIC_DROPIN = SYSTEMD_DIR / "meshtasticd.service.d/20-mesh-radio-manager.conf"
 WEB_UNIT = SYSTEMD_DIR / "mesh-radio-manager-web.service"
 TMPFILES = Path("/etc/tmpfiles.d/mesh-radio-manager.conf")
+MANAGER_COMMAND = "/usr/bin/mesh-radio" if Path("/usr/bin/mesh-radio").is_file() else "/usr/local/bin/mesh-radio"
 
 OPENHOP_DROPIN_TEXT = """# Managed by Mesh Radio Manager. Vendor openHop files are untouched.
 [Service]
@@ -22,8 +23,8 @@ RuntimeDirectoryMode=0750
 # Runs as root solely to resolve the assigned USB adapter and atomically update
 # its selector in openHop's canonical config. ExecStart remains upstream's
 # original command so dashboard password/token saves stay persistent.
-ExecStartPre=+/usr/local/bin/mesh-radio internal prepare-openhop
-"""
+ExecStartPre=+{manager_command} internal prepare-openhop
+""".format(manager_command=MANAGER_COMMAND)
 
 MESHTASTIC_DROPIN_TEXT = """# Managed by Mesh Radio Manager. USB isolation happens in a private namespace.
 [Service]
@@ -32,8 +33,8 @@ Group=root
 PrivateMounts=yes
 NoNewPrivileges=no
 ExecStart=
-ExecStart=/usr/local/bin/mesh-radio internal run-meshtastic
-"""
+ExecStart={manager_command} internal run-meshtastic
+""".format(manager_command=MANAGER_COMMAND)
 
 WEB_UNIT_TEXT = """[Unit]
 Description=Mesh Radio Manager diagnostics UI
@@ -42,7 +43,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/mesh-radio web serve
+ExecStart={manager_command} web serve
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=yes
@@ -50,7 +51,7 @@ PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target
-"""
+""".format(manager_command=MANAGER_COMMAND)
 
 
 def _atomic_write(path: Path, text: str, mode: int = 0o644) -> None:

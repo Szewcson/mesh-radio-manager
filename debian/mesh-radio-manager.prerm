@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+case "$1" in
+    remove|deconfigure)
+        if [ -x /usr/bin/mesh-radio ]; then
+            /usr/bin/mesh-radio internal uninstall-integration || true
+        fi
+        ;;
+esac

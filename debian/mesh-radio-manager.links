@@ -1,0 +1,2 @@
+usr/lib/mesh-radio-manager/mesh-radio-menu usr/bin/mesh-radio-menu
+usr/lib/mesh-radio-manager/configure-apt-repository.sh usr/bin/mesh-radio-apt-repository

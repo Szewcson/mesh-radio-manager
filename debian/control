@@ -1,0 +1,14 @@
+Source: mesh-radio-manager
+Section: admin
+Priority: optional
+Maintainer: Mesh Radio Manager contributors <noreply@invalid.example>
+Build-Depends: debhelper-compat (= 13), dh-python, pybuild-plugin-pyproject, python3-all, python3-setuptools, python3-yaml
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+
+Package: mesh-radio-manager
+Architecture: all
+Depends: ${misc:Depends}, ${python3:Depends}, curl, gpg, python3-yaml, util-linux
+Description: independent USB LoRa radio manager for openHop and meshtasticd
+ Coordinates radio assignment, generated MeshtasticD configuration, and
+ manager-owned systemd integration without modifying the upstream openHop tree.

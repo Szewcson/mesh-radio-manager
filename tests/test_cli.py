@@ -43,14 +43,22 @@ class CliTests(unittest.TestCase):
             ["/opt/mesh-radio-manager/update.sh"],
         )
 
+    def test_manager_update_runs_the_self_update_script(self) -> None:
+        with patch(
+            "mesh_radio_manager.cli.subprocess.run", return_value=subprocess.CompletedProcess([], 0)
+        ) as runner:
+            self.assertEqual(main(["manager", "update"]), 0)
+        self.assertEqual(runner.call_args.args[0], ["/opt/mesh-radio-manager/manager-update.sh"])
+
     def test_update_script_uses_the_official_openhop_updater_without_copying_it(self) -> None:
         script = (Path(__file__).parents[1] / "update.sh").read_text(encoding="utf-8")
         self.assertIn("meshtastic upgrade --yes", script)
-        self.assertIn("mesh-radio meshtastic status", script)
+        self.assertIn('"$manager_cli" meshtastic status', script)
         self.assertIn('"$openhop_updater" upgrade', script)
+        self.assertIn('PYMC_SILENT=1 "$openhop_updater" upgrade', script)
         self.assertIn("/root/openhop-repeater/manage.sh", script)
-        self.assertIn("git clone --depth 1", script)
-        self.assertIn("Szewcson/mesh-radio-manager.git", script)
+        self.assertIn("/usr/lib/mesh-radio-manager/manager-update.sh", script)
+        self.assertIn('"$manager_update"', script)
         self.assertNotIn("openhop-update", script)
 
 

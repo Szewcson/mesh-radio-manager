@@ -1,0 +1,6 @@
+config/config.example.yaml usr/share/mesh-radio-manager
+manager-update.sh usr/lib/mesh-radio-manager
+scripts/mesh-radio-manager-profile.sh etc/profile.d
+scripts/mesh-radio-menu usr/lib/mesh-radio-manager
+scripts/configure-apt-repository.sh usr/lib/mesh-radio-manager
+update.sh usr/lib/mesh-radio-manager

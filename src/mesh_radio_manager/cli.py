@@ -16,6 +16,7 @@ from .assignments import assign, configuration_lock, load, save, set_meshtastic_
 from .diagnostics import report
 from .errors import ManagerError
 from .integration import install as install_integration
+from .integration import uninstall as uninstall_integration
 from .meshtastic import (
     MESHTASTIC_CONFIG,
     MESHTASTIC_UNIT,
@@ -41,6 +42,18 @@ from .profiles import MESHTASTIC_PROFILES
 from .services import action, listening_ports, logs, state
 from .usb import enumerate_devices, parse_selector
 from .web import serve
+
+
+PACKAGE_CONTROL_DIR = Path("/usr/lib/mesh-radio-manager")
+LEGACY_CONTROL_DIR = Path("/opt/mesh-radio-manager")
+
+
+def _control_script(name: str) -> str:
+    """Prefer package-owned controls; retain legacy staging during migration."""
+    packaged = PACKAGE_CONTROL_DIR / name
+    if packaged.is_file():
+        return str(packaged)
+    return str(LEGACY_CONTROL_DIR / name)
 
 
 def _emit(value: Any, as_json: bool) -> None:
@@ -95,7 +108,11 @@ def parser() -> argparse.ArgumentParser:
     assign_parser.add_argument("--verified-lora", help="YAML pin mapping for generic-ch341-sx1262 only")
     commands.add_parser("verify")
     commands.add_parser("diagnose")
-    commands.add_parser("update", help="update Mesh Radio Manager and meshtasticd")
+    commands.add_parser("update", help="update openHop, the signed manager package, and meshtasticd")
+    manager = commands.add_parser("manager", help="manage Mesh Radio Manager itself")
+    manager.add_subparsers(dest="manager_command", required=True).add_parser(
+        "update", help="update only Mesh Radio Manager through its signed Debian package"
+    )
     commands.add_parser("install-integration").add_argument("--web", action="store_true")
 
     openhop = commands.add_parser("openhop").add_subparsers(dest="openhop_command", required=True)
@@ -131,6 +148,7 @@ def parser() -> argparse.ArgumentParser:
     internal = commands.add_parser("internal").add_subparsers(dest="internal_command", required=True)
     internal.add_parser("prepare-openhop")
     internal.add_parser("migrate-openhop-config")
+    internal.add_parser("uninstall-integration")
     internal.add_parser("run-meshtastic")
     return root
 
@@ -170,6 +188,11 @@ def main(argv: list[str] | None = None) -> int:
                 }
         elif args.command == "diagnose":
             value = report()
+        elif args.command == "manager":
+            result = subprocess.run([_control_script("manager-update.sh")], text=True)
+            if result.returncode:
+                raise ManagerError("Mesh Radio Manager self-update failed")
+            value = {"manager_updated": True}
         elif args.command == "install-integration":
             install_integration(enable_web=args.web)
             value = {"installed": True, "web_enabled": args.web}
@@ -254,10 +277,13 @@ def main(argv: list[str] | None = None) -> int:
                 value = {"persistent_config": str(prepare_openhop())}
             elif args.internal_command == "migrate-openhop-config":
                 value = {"migrated_legacy_runtime_config": migrate_newer_runtime_config()}
+            elif args.internal_command == "uninstall-integration":
+                uninstall_integration()
+                value = {"uninstalled": True}
             else:
                 return run_daemon()
         elif args.command == "update":
-            result = subprocess.run(["/opt/mesh-radio-manager/update.sh"], text=True)
+            result = subprocess.run([_control_script("update.sh")], text=True)
             if result.returncode:
                 raise ManagerError("Mesh Radio Manager update failed")
             value = {"manager_updated": True, "meshtastic_updated": True}

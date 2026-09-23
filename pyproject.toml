@@ -9,7 +9,7 @@ description = "Independent USB LoRa radio assignments for openHop and meshtastic
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["PyYAML>=6.0"]
-license = {text = "MIT"}
+license = "MIT"
 authors = [{name = "Mesh Radio Manager contributors"}]
 
 [project.scripts]

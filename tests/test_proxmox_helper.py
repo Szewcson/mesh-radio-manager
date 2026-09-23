@@ -125,6 +125,10 @@ class ProxmoxHelperTests(unittest.TestCase):
         self.assertIn("actions/checkout@v7", release)
         self.assertIn("actions/setup-python@v7", release)
         self.assertIn('mktemp -d "${RUNNER_TEMP:?}/mesh-radio-manager-gpg.XXXXXX"', release)
+        self.assertLess(
+            release.index("mkdir -p dist/release/mesh-radio-manager"),
+            release.index(">dist/apt-source.env"),
+        )
         documentation = (root / "docs/apt-repository.md").read_text(encoding="utf-8")
         self.assertIn("external secret manager", documentation)
         self.assertNotIn("KeePassXC", documentation)

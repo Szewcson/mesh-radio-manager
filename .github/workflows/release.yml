@@ -84,9 +84,9 @@ jobs:
             *) echo "APT_PUBLIC_URI must be an HTTPS URL without query or fragment." >&2; exit 1 ;;
           esac
           APT_PUBLIC_URI=${APT_PUBLIC_URI%/}
+          mkdir -p dist/release/mesh-radio-manager
           printf 'APT_URI=%s\nAPT_KEY_URL=%s/mesh-radio-manager-archive-keyring.asc\nAPT_FINGERPRINT=%s\n' \
             "$APT_PUBLIC_URI" "$APT_PUBLIC_URI" "$APT_GPG_FINGERPRINT" >dist/apt-source.env
-          mkdir -p dist/release/mesh-radio-manager
           cp ../mesh-radio-manager_*_all.deb dist/
           cp -a README.md MIGRATION.md install.sh scripts dist/apt-source.env dist/release/mesh-radio-manager/
           cp dist/mesh-radio-manager_*_all.deb dist/release/mesh-radio-manager/

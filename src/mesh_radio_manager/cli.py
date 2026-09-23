@@ -73,6 +73,7 @@ def _status() -> dict[str, Any]:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="mesh-radio", description="Independent USB radio manager for openHop and meshtasticd")
     root.add_argument("--json", action="store_true", help="print machine-readable JSON")
+    root.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     commands = root.add_subparsers(dest="command", required=True)
     commands.add_parser("status")
     commands.add_parser("radios")
@@ -94,7 +95,12 @@ def parser() -> argparse.ArgumentParser:
     install = meshtastic.add_parser("install")
     install.add_argument("--channel", default="beta", choices=("alpha", "beta"))
     for command in ("status", "start", "stop", "restart", "configure", "backup"):
-        meshtastic.add_parser(command)
+        configure = meshtastic.add_parser(command)
+        if command == "configure":
+            configure.add_argument(
+                "--advanced-file",
+                help="verified non-Lora meshtasticd YAML to store in manager configuration",
+            )
     restore = meshtastic.add_parser("restore")
     restore.add_argument("backup")
     upgrade_parser = meshtastic.add_parser("upgrade")
@@ -158,11 +164,30 @@ def main(argv: list[str] | None = None) -> int:
                 value = state(OPENHOP_UNIT)
         elif args.command == "meshtastic":
             if args.meshtastic_command == "install":
+                # The package may enable a systemd service. Install the
+                # guarded unit before apt can ever expose it at boot.
+                install_integration(enable_web=False)
                 value = install_package(args.channel)
             elif args.meshtastic_command == "status":
                 value = {"service": state(MESHTASTIC_UNIT), "packages": package_versions()}
             elif args.meshtastic_command == "configure":
-                value = {"effective_config": str(prepare_meshtastic())}
+                if args.advanced_file:
+                    try:
+                        advanced = yaml.safe_load(Path(args.advanced_file).read_text(encoding="utf-8")) or {}
+                    except (OSError, yaml.YAMLError) as error:
+                        raise ManagerError(f"Cannot load advanced Meshtastic YAML: {error}") from error
+                    if not isinstance(advanced, dict) or "Lora" in advanced:
+                        raise ManagerError(
+                            "Advanced Meshtastic YAML must be a mapping and cannot contain Lora; "
+                            "hardware assignment is protected"
+                        )
+                    with configuration_lock():
+                        data = load()
+                        data.setdefault("meshtastic", {})["advanced"] = advanced
+                        save(data)
+                    value = {"saved_advanced_config": True}
+                else:
+                    value = {"effective_config": str(prepare_meshtastic())}
             elif args.meshtastic_command == "backup":
                 backup = backup_config()
                 value = {"backup": str(backup) if backup else None}

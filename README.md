@@ -78,6 +78,13 @@ sudo mesh-radio web enable
 
 It is a read-only diagnostics dashboard in this initial release; the CLI is
 the authenticated administrator interface for assignments and service control.
+For vetted non-hardware Meshtastic settings (such as settings documented by
+the installed meshtasticd version), use
+`mesh-radio meshtastic configure --advanced-file settings.yaml`. A `Lora`
+block is rejected because GPIO and USB ownership must remain attached to the
+radio assignment. Region/power are deliberately not silently set by this
+project; configure them through the Meshtastic node/API after choosing the
+legal local region.
 
 ## Operations
 

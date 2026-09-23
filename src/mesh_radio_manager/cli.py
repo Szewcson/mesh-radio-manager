@@ -12,7 +12,7 @@ from typing import Any
 import yaml
 
 from . import __version__
-from .assignments import assign, configuration_lock, load, save, validate
+from .assignments import assign, configuration_lock, load, save, set_meshtastic_channel, validate
 from .diagnostics import report
 from .errors import ManagerError
 from .integration import install as install_integration
@@ -168,6 +168,7 @@ def main(argv: list[str] | None = None) -> int:
                 # guarded unit before apt can ever expose it at boot.
                 install_integration(enable_web=False)
                 value = install_package(args.channel)
+                set_meshtastic_channel(args.channel)
             elif args.meshtastic_command == "status":
                 value = {"service": state(MESHTASTIC_UNIT), "packages": package_versions()}
             elif args.meshtastic_command == "configure":

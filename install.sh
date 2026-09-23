@@ -9,7 +9,7 @@ install_meshtastic=0
 enable_web=0
 channel=beta
 
-if [ ! -f "$project_dir/pyproject.toml" ]; then
+if [ ! -f "$project_dir/pyproject.toml" ] || [ ! -f "$project_dir/src/mesh_radio_manager/__init__.py" ]; then
     # Supports the documented `curl ... | sudo bash` path without vendoring
     # openHop. Download only this repository and re-enter its checked archive.
     bootstrap_dir=$(mktemp -d /tmp/mesh-radio-manager.XXXXXX)

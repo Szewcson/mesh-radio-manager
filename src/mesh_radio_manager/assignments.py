@@ -226,3 +226,13 @@ def assign(
             effective_meshtastic_config(assignment, resolved[role], data.get("meshtastic", {}).get("advanced", {}))
         save(data, path)
         return data
+
+
+def set_meshtastic_channel(channel: str, path: Path = CONFIG_PATH) -> dict[str, Any]:
+    if channel not in {"alpha", "beta"}:
+        raise ManagerError("Meshtastic channel must be alpha or beta")
+    with configuration_lock():
+        data = load(path)
+        data.setdefault("meshtastic", {})["channel"] = channel
+        save(data, path)
+        return data

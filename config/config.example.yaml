@@ -7,6 +7,12 @@ meshtastic:
   # Extra verified meshtasticd YAML. The Lora block is intentionally forbidden;
   # USB selection and hardware pins belong to the assignment/profile layer.
   advanced: {}
+  # Enable the upstream MeshtasticD HTTPS UI explicitly. It uses 9443 so it
+  # does not overlap openHop (8000), this manager's dashboard (8001), or the
+  # Meshtastic TCP API (4403).
+  web_ui:
+    enabled: false
+    port: 9443
 web:
   host: 127.0.0.1
   port: 8001

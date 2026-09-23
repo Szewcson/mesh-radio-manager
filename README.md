@@ -115,13 +115,34 @@ sudo mesh-radio web enable
 
 It is a read-only diagnostics dashboard in this initial release; the CLI is
 the authenticated administrator interface for assignments and service control.
+
+### MeshtasticD web UI
+
+The upstream MeshtasticD HTTPS web UI is separate from this manager's
+diagnostics page and is disabled by default. Enable it explicitly after the
+radio assignment is healthy:
+
+```bash
+mesh-radio meshtastic web enable
+mesh-radio meshtastic web status
+```
+
+It uses `https://<LXC-IP>:9443` by default. The daemon generates a local TLS
+certificate if none exists, so a browser warning is expected on first access.
+The manager refuses ports used by the Meshtastic TCP API (`4403`), openHop
+(`8000`), or its own dashboard (`8001`), and checks live listeners before
+restarting MeshtasticD. A different unused HTTPS port can be selected with
+`mesh-radio meshtastic web enable --port <PORT>`; verify the resulting page and
+API connection after changing it. Disable it with
+`mesh-radio meshtastic web disable`.
+
 For vetted non-hardware Meshtastic settings (such as settings documented by
 the installed meshtasticd version), use
 `mesh-radio meshtastic configure --advanced-file settings.yaml`. A `Lora`
-block is rejected because GPIO and USB ownership must remain attached to the
-radio assignment. Region/power are deliberately not silently set by this
-project; configure them through the Meshtastic node/API after choosing the
-legal local region.
+or `Webserver` block is rejected because GPIO/USB ownership and web-port
+conflict checking belong to the manager. Region/power are deliberately not
+silently set by this project; configure them through the Meshtastic node/API
+after choosing the legal local region.
 
 ## Operations
 

@@ -30,7 +30,11 @@ def _default() -> dict[str, Any]:
     return {
         "version": 1,
         "assignments": {},
-        "meshtastic": {"channel": "beta", "advanced": {}},
+        "meshtastic": {
+            "channel": "beta",
+            "advanced": {},
+            "web_ui": {"enabled": False, "port": 9443},
+        },
         "web": {"host": "127.0.0.1", "port": 8001},
     }
 

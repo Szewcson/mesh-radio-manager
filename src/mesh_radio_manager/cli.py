@@ -24,8 +24,11 @@ from .meshtastic import (
     package_versions,
     prepare_runtime_config as prepare_meshtastic,
     restore_config,
+    restore_web_ui,
     run_daemon,
+    set_web_ui,
     upgrade,
+    web_ui_status,
 )
 from .openhop import (
     OPENHOP_UNIT,
@@ -35,7 +38,7 @@ from .openhop import (
     prepare_persistent_config as prepare_openhop,
 )
 from .profiles import MESHTASTIC_PROFILES
-from .services import action, logs, state
+from .services import action, listening_ports, logs, state
 from .usb import enumerate_devices, parse_selector
 from .web import serve
 
@@ -68,11 +71,13 @@ def _load_lora(path: str | None) -> dict[str, Any] | None:
 
 
 def _status() -> dict[str, Any]:
+    configuration = load()
     return {
         "manager_version": __version__,
         "openhop": {**openhop_metadata(), "service": state(OPENHOP_UNIT)},
         "meshtasticd": {"service": state(MESHTASTIC_UNIT), "packages": package_versions()},
-        "assignments": load().get("assignments", {}),
+        "meshtastic_web_ui": web_ui_status(configuration, listening_ports()),
+        "assignments": configuration.get("assignments", {}),
     }
 
 
@@ -111,6 +116,11 @@ def parser() -> argparse.ArgumentParser:
     restore.add_argument("backup")
     upgrade_parser = meshtastic.add_parser("upgrade")
     upgrade_parser.add_argument("--yes", action="store_true")
+    meshtastic_web = meshtastic.add_parser("web").add_subparsers(dest="meshtastic_web_command", required=True)
+    meshtastic_web.add_parser("status")
+    web_enable = meshtastic_web.add_parser("enable")
+    web_enable.add_argument("--port", type=int, help="HTTPS port; defaults to 9443")
+    meshtastic_web.add_parser("disable")
 
     log_parser = commands.add_parser("logs")
     log_parser.add_argument("service", choices=("openhop", "meshtastic"))
@@ -184,10 +194,11 @@ def main(argv: list[str] | None = None) -> int:
                         advanced = yaml.safe_load(Path(args.advanced_file).read_text(encoding="utf-8")) or {}
                     except (OSError, yaml.YAMLError) as error:
                         raise ManagerError(f"Cannot load advanced Meshtastic YAML: {error}") from error
-                    if not isinstance(advanced, dict) or "Lora" in advanced:
+                    protected = {"Lora", "Webserver"}.intersection(advanced) if isinstance(advanced, dict) else set()
+                    if not isinstance(advanced, dict) or protected:
                         raise ManagerError(
-                            "Advanced Meshtastic YAML must be a mapping and cannot contain Lora; "
-                            "hardware assignment is protected"
+                            "Advanced Meshtastic YAML must be a mapping and cannot contain protected "
+                            "Lora or Webserver settings"
                         )
                     with configuration_lock():
                         data = load()
@@ -208,6 +219,23 @@ def main(argv: list[str] | None = None) -> int:
                     raise ManagerError(
                         f"meshtasticd installed={value['installed']}, candidate={value['candidate']}; rerun with --yes"
                     )
+            elif args.meshtastic_command == "web":
+                if args.meshtastic_web_command == "status":
+                    value = web_ui_status(load(), listening_ports())
+                else:
+                    enabled = args.meshtastic_web_command == "enable"
+                    port = args.port if enabled else None
+                    previous, _ = set_web_ui(enabled, port=port, listening=listening_ports())
+                    try:
+                        action(MESHTASTIC_UNIT, "restart")
+                    except ManagerError as error:
+                        restore_web_ui(previous)
+                        try:
+                            action(MESHTASTIC_UNIT, "restart")
+                        except ManagerError:
+                            pass
+                        raise ManagerError(f"Meshtastic web UI change was reverted: {error}") from error
+                    value = web_ui_status(load(), listening_ports())
             else:
                 action(MESHTASTIC_UNIT, args.meshtastic_command)
                 value = state(MESHTASTIC_UNIT)

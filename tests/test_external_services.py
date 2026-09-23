@@ -12,7 +12,15 @@ import yaml
 
 from mesh_radio_manager.errors import ManagerError
 from mesh_radio_manager.integration import OPENHOP_DROPIN_TEXT, upstream_unit_supported
-from mesh_radio_manager.meshtastic import backup_config, installed as meshtastic_installed, restore_config
+from mesh_radio_manager.meshtastic import (
+    MESHTASTIC_WEB_UI_DEFAULT_PORT,
+    apply_web_ui_settings,
+    backup_config,
+    installed as meshtastic_installed,
+    restore_config,
+    validate_web_ui_enable,
+    web_ui_settings,
+)
 from mesh_radio_manager.openhop import installed as openhop_installed, metadata, prepare_persistent_config
 from mesh_radio_manager.usb import UsbDevice
 from mesh_radio_manager.services import action
@@ -97,6 +105,18 @@ class ExternalServiceTests(unittest.TestCase):
             binary.write_text("#!/bin/sh\n", encoding="utf-8")
             binary.chmod(0o755)
             self.assertTrue(meshtastic_installed(binary))
+
+    def test_meshtastic_web_ui_uses_a_distinct_default_port_and_rejects_ui_collisions(self) -> None:
+        data = {"meshtastic": {"web_ui": {"enabled": True, "port": MESHTASTIC_WEB_UI_DEFAULT_PORT}}, "web": {"port": 8001}}
+        settings = web_ui_settings(data)
+        self.assertEqual(settings, {"enabled": True, "port": 9443})
+        effective = apply_web_ui_settings({"Lora": {}}, settings)
+        self.assertEqual(effective["Webserver"]["Port"], 9443)
+        self.assertIn("SSLKey", effective["Webserver"])
+        with self.assertRaisesRegex(ManagerError, "openHop web UI"):
+            validate_web_ui_enable(data, 8000, "")
+        with self.assertRaisesRegex(ManagerError, "Meshtastic TCP API"):
+            validate_web_ui_enable(data, 4403, "")
 
     def test_backup_restore(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

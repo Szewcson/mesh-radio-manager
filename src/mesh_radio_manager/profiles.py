@@ -77,8 +77,13 @@ def effective_meshtastic_config(assignment: Mapping[str, Any], device: UsbDevice
     if advanced:
         if not isinstance(advanced, Mapping):
             raise ManagerError("Meshtastic advanced configuration must be a YAML mapping")
-        if "Lora" in advanced:
-            raise ManagerError("Advanced Meshtastic configuration cannot override the protected Lora block")
+        protected = {"Lora", "Webserver"}.intersection(advanced)
+        if protected:
+            raise ManagerError(
+                "Advanced Meshtastic configuration cannot override protected "
+                + ", ".join(sorted(protected))
+                + " settings"
+            )
         result = _merge({}, advanced)
     else:
         result = {}

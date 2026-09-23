@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -23,6 +24,122 @@ MESHTASTIC_RUNTIME_CONFIG = Path("/run/mesh-radio-manager/meshtasticd.yaml")
 MESHTASTIC_FS_DIR = Path("/var/lib/meshtasticd")
 BACKUP_DIR = Path("/var/lib/mesh-radio-manager/backups")
 MESHTASTIC_UNIT = "meshtasticd.service"
+MESHTASTIC_API_PORT = 4403
+MESHTASTIC_WEB_UI_DEFAULT_PORT = 9443
+MESHTASTIC_WEB_UI_ROOT = Path("/usr/share/meshtasticd/web")
+MESHTASTIC_WEB_UI_KEY = Path("/etc/meshtasticd/ssl/private_key.pem")
+MESHTASTIC_WEB_UI_CERTIFICATE = Path("/etc/meshtasticd/ssl/certificate.pem")
+
+
+def web_ui_settings(data: Mapping[str, Any]) -> dict[str, Any]:
+    meshtastic = data.get("meshtastic", {})
+    if not isinstance(meshtastic, Mapping):
+        raise ManagerError("meshtastic settings must be a mapping")
+    configured = meshtastic.get("web_ui", {})
+    if not isinstance(configured, Mapping):
+        raise ManagerError("meshtastic.web_ui must be a mapping")
+    enabled = configured.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ManagerError("meshtastic.web_ui.enabled must be true or false")
+    port = configured.get("port", MESHTASTIC_WEB_UI_DEFAULT_PORT)
+    if isinstance(port, bool):
+        raise ManagerError("meshtastic.web_ui.port must be an integer")
+    try:
+        port = int(port)
+    except (TypeError, ValueError) as error:
+        raise ManagerError("meshtastic.web_ui.port must be an integer") from error
+    if not 1 <= port <= 65535:
+        raise ManagerError("meshtastic.web_ui.port must be in 1..65535")
+    return {"enabled": enabled, "port": port}
+
+
+def _listeners_for_port(output: str, port: int) -> list[str]:
+    pattern = re.compile(rf":{re.escape(str(port))}(?:\s|$)")
+    return [line for line in output.splitlines() if pattern.search(line)]
+
+
+def _reserved_web_ui_ports(data: Mapping[str, Any]) -> dict[int, str]:
+    reserved = {
+        MESHTASTIC_API_PORT: "the Meshtastic TCP API",
+        8000: "the openHop web UI",
+    }
+    manager_web = data.get("web", {})
+    if isinstance(manager_web, Mapping):
+        candidate = manager_web.get("port", 8001)
+        if isinstance(candidate, int) and not isinstance(candidate, bool) and 1 <= candidate <= 65535:
+            reserved[candidate] = "the Mesh Radio Manager diagnostics UI"
+    return reserved
+
+
+def validate_web_ui_enable(data: Mapping[str, Any], port: int, listening: str) -> None:
+    if port in _reserved_web_ui_ports(data):
+        raise ManagerError(f"Meshtastic web UI port {port} conflicts with {_reserved_web_ui_ports(data)[port]}")
+    if not MESHTASTIC_WEB_UI_ROOT.is_dir():
+        raise ManagerError(f"Meshtastic web UI assets are missing: {MESHTASTIC_WEB_UI_ROOT}")
+    existing = _listeners_for_port(listening, port)
+    unowned = [line for line in existing if "meshtasticd" not in line]
+    if unowned:
+        raise ManagerError(
+            f"Meshtastic web UI port {port} is already in use: {unowned[0].strip()}"
+        )
+
+
+def set_web_ui(enabled: bool, *, port: int | None = None, listening: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+    """Persist an opt-in web UI setting after validating its port.
+
+    The caller restarts meshtasticd after this function returns.  The setting
+    is manager-owned so advanced YAML cannot bypass conflict checks.
+    """
+    with configuration_lock():
+        data = load()
+        previous = web_ui_settings(data)
+        selected_port = previous["port"] if port is None else port
+        if isinstance(selected_port, bool):
+            raise ManagerError("Meshtastic web UI port must be an integer")
+        try:
+            selected_port = int(selected_port)
+        except (TypeError, ValueError) as error:
+            raise ManagerError("Meshtastic web UI port must be an integer") from error
+        if not 1 <= selected_port <= 65535:
+            raise ManagerError("Meshtastic web UI port must be in 1..65535")
+        if enabled:
+            validate_web_ui_enable(data, selected_port, listening)
+        data.setdefault("meshtastic", {})["web_ui"] = {"enabled": enabled, "port": selected_port}
+        save(data)
+        return previous, {"enabled": enabled, "port": selected_port}
+
+
+def restore_web_ui(settings: Mapping[str, Any]) -> None:
+    with configuration_lock():
+        data = load()
+        restored = web_ui_settings({"meshtastic": {"web_ui": settings}})
+        data.setdefault("meshtastic", {})["web_ui"] = restored
+        save(data)
+
+
+def web_ui_status(data: Mapping[str, Any], listening: str) -> dict[str, Any]:
+    settings = web_ui_settings(data)
+    listeners = _listeners_for_port(listening, settings["port"])
+    return {
+        **settings,
+        "root": str(MESHTASTIC_WEB_UI_ROOT),
+        "url": f"https://<LXC-IP>:{settings['port']}",
+        "listening": bool(listeners),
+        "listeners": listeners,
+    }
+
+
+def apply_web_ui_settings(config: dict[str, Any], settings: Mapping[str, Any]) -> dict[str, Any]:
+    """Add only manager-owned web server settings to an effective config."""
+    ui = web_ui_settings({"meshtastic": {"web_ui": settings}})
+    if ui["enabled"]:
+        config["Webserver"] = {
+            "Port": ui["port"],
+            "RootPath": str(MESHTASTIC_WEB_UI_ROOT),
+            "SSLKey": str(MESHTASTIC_WEB_UI_KEY),
+            "SSLCert": str(MESHTASTIC_WEB_UI_CERTIFICATE),
+        }
+    return config
 
 
 def installed(binary: Path = MESHTASTIC_BINARY) -> bool:
@@ -61,7 +178,9 @@ def prepare_runtime_config(
         if device is None or not isinstance(assignment, Mapping):
             raise ManagerError("No radio is assigned to meshtasticd")
         advanced = data.get("meshtastic", {}).get("advanced", {})
-        _atomic_yaml(destination, effective_meshtastic_config(assignment, device, advanced))
+        effective = effective_meshtastic_config(assignment, device, advanced)
+        apply_web_ui_settings(effective, web_ui_settings(data))
+        _atomic_yaml(destination, effective)
     return destination
 
 

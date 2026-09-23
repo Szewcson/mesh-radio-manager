@@ -18,6 +18,13 @@ class CliTests(unittest.TestCase):
             result = main(["meshtastic", "configure", "--advanced-file", str(settings)])
             self.assertEqual(result, 2)
 
+    def test_advanced_configuration_rejects_webserver_override(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            settings = Path(directory) / "bad.yaml"
+            settings.write_text("Webserver:\n  Port: 8000\n", encoding="utf-8")
+            result = main(["meshtastic", "configure", "--advanced-file", str(settings)])
+            self.assertEqual(result, 2)
+
     def test_package_install_installs_guard_first(self) -> None:
         calls: list[str] = []
         with patch("mesh_radio_manager.cli.install_integration", side_effect=lambda **_: calls.append("guard")), patch(

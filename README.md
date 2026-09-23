@@ -25,6 +25,33 @@ Debian LXC
 
 ## Install
 
+### Proxmox host installer (recommended)
+
+Run this once from the **Proxmox host shell** as root:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Szewcson/mesh-radio-manager/main/scripts/proxmox-install.sh)"
+```
+
+It follows the familiar Proxmox VE Helper-Scripts interactive style. It invokes
+the official upstream openHop Proxmox installer—without copying or changing
+it—detects the new CTID, then uses `pct exec` to install Mesh Radio Manager and
+Meshtastic alpha in that LXC. The official installer configures the privileged
+LXC and USB bus passthrough; this helper never edits the openHop checkout. For
+an existing CTID it idempotently verifies/reuses the official host quirks:
+CH341 udev permissions, `c 189:* rwm`, and the `/dev/bus/usb` LXC bind mount.
+It refuses an unprivileged LXC rather than attempting an unsafe conversion.
+
+For an existing official openHop LXC, run this from the Proxmox host instead:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/Szewcson/mesh-radio-manager/main/scripts/proxmox-install.sh)" -- --ctid <CTID> --channel alpha
+```
+
+Use `--no-meshtastic` to install only the manager integration.
+
+### Manual LXC installer
+
 Create the LXC with the official openHop installer. Inside that LXC, clone or
 download a release of this project, then run:
 

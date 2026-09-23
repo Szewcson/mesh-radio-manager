@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import tomllib
 import unittest
 
 
@@ -91,9 +92,14 @@ class ProxmoxHelperTests(unittest.TestCase):
         root = Path(__file__).parents[1]
         control = (root / "debian/control").read_text(encoding="utf-8")
         postinst = (root / "debian/mesh-radio-manager.postinst").read_text(encoding="utf-8")
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
         ci = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         release = (root / ".github/workflows/release.yml").read_text(encoding="utf-8")
         self.assertIn("Package: mesh-radio-manager", control)
+        self.assertEqual(pyproject["project"]["license"], {"text": "MIT"})
+        package_version = pyproject["project"]["version"]
+        module = (root / "src/mesh_radio_manager/__init__.py").read_text(encoding="utf-8")
+        self.assertIn(f'__version__ = "{package_version}"', module)
         self.assertIn("install-integration", postinst)
         self.assertIn("dpkg-buildpackage", ci)
         self.assertIn("build-essential", ci)

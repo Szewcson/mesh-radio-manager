@@ -16,6 +16,7 @@ class ProxmoxHelperTests(unittest.TestCase):
         self.assertIn('ATTR{idVendor}=="1a86"', script)
         self.assertIn("unprivileged", script)
         self.assertIn("proxmox-manage.sh", script)
+        self.assertIn("gnupg", script)
         self.assertNotIn("git clone https://github.com/openhop-dev", script)
 
     def test_operator_helpers_are_installed_and_removed_with_the_manager(self) -> None:
@@ -27,6 +28,11 @@ class ProxmoxHelperTests(unittest.TestCase):
         self.assertIn("mesh-radio-manager-profile.sh", install)
         self.assertIn("mesh-radio-menu", uninstall)
         self.assertIn("Update everything", panel)
+
+    def test_meshtastic_install_prerequisite_is_included(self) -> None:
+        root = Path(__file__).parents[1]
+        install = (root / "install.sh").read_text(encoding="utf-8")
+        self.assertIn("apt-get install -y gnupg", install)
 
 
 if __name__ == "__main__":

@@ -161,7 +161,7 @@ elif (( ! was_running )); then
 fi
 
 msg_info "Ensuring installer prerequisites exist in LXC ${ctid}"
-pct exec "$ctid" -- bash -lc 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y curl git python3-venv'
+pct exec "$ctid" -- bash -lc 'apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y curl git python3-venv gnupg'
 
 manager_command="curl -fsSL '$MANAGER_INSTALLER' | bash -s --"
 if ((install_meshtastic)); then

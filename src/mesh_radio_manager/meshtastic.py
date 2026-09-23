@@ -138,6 +138,10 @@ def install_package(channel: str = "beta") -> dict[str, str | None]:
         raise ManagerError("Meshtastic installation must run as root")
     if channel not in {"alpha", "beta"}:
         raise ManagerError("Meshtastic channel must be alpha or beta")
+    if shutil.which("gpg") is None:
+        raise ManagerError(
+            "gnupg is required to import the Meshtastic apt key; run: apt-get install -y gnupg"
+        )
     # The Debian 13 suite and repository path are the current upstream method.
     base = f"https://download.opensuse.org/repositories/network:/Meshtastic:/{channel}/Debian_13"
     keyring = Path(f"/etc/apt/keyrings/meshtastic-{channel}.gpg")

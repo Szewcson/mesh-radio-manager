@@ -78,6 +78,10 @@ else
     /usr/local/bin/mesh-radio install-integration
 fi
 if [ "$install_meshtastic" -eq 1 ]; then
+    # meshtasticd's upstream OBS repository key is armored; gpg is required
+    # before the manager can convert it into an apt keyring.
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y gnupg
     /usr/local/bin/mesh-radio meshtastic install --channel "$channel"
 fi
 

@@ -125,3 +125,10 @@ Meshtastic hardware fields are limited to profiles verified against current
 upstream Meshtastic configuration sources. Generic CH341/SX1262 needs explicit
 verified pin mapping. Meshtastic region remains node configuration and is not
 silently selected by this project.
+
+The MeshTadpole profile is taken from Meshtastic's
+[`lora-usb-meshtoad-e22.yaml`](https://raw.githubusercontent.com/meshtastic/firmware/develop/bin/config.d/lora-usb-meshtoad-e22.yaml),
+including its optional `USB_Serialnum` multi-radio selector. PineDio uses the
+current upstream `lora-pinedio-usb-sx1262.yaml` profile, which upstream marks
+as **deprecated**; it remains available for existing hardware but should be
+validated carefully after every Meshtastic update.

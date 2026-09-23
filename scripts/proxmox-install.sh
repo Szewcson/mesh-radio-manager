@@ -169,6 +169,7 @@ if ((install_meshtastic)); then
 fi
 msg_info "Installing Mesh Radio Manager in LXC ${ctid}"
 pct exec "$ctid" -- bash -lc "$manager_command"
+pct exec "$ctid" -- /usr/local/bin/mesh-radio --version >/dev/null
 
 msg_info "Installing Proxmox-host control panel"
 if curl -fsSL "$PVE_MANAGER_SCRIPT" -o /usr/local/sbin/mesh-radio-pve; then

@@ -34,6 +34,14 @@ class ProxmoxHelperTests(unittest.TestCase):
         install = (root / "install.sh").read_text(encoding="utf-8")
         self.assertIn("apt-get install -y gnupg", install)
 
+    def test_installers_validate_the_manager_launcher(self) -> None:
+        root = Path(__file__).parents[1]
+        install = (root / "install.sh").read_text(encoding="utf-8")
+        helper = (root / "scripts/proxmox-install.sh").read_text(encoding="utf-8")
+        self.assertIn('[ ! -x "$manager_root/venv/bin/mesh-radio" ]', install)
+        self.assertIn('/usr/local/bin/mesh-radio --version', install)
+        self.assertIn('pct exec "$ctid" -- /usr/local/bin/mesh-radio --version', helper)
+
 
 if __name__ == "__main__":
     unittest.main()

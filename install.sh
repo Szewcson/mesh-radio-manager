@@ -59,7 +59,15 @@ if [ "$project_dir" != "$manager_root/source" ]; then
 fi
 python3 -m venv "$manager_root/venv"
 "$manager_root/venv/bin/pip" install --upgrade "$manager_root/source"
+if [ ! -x "$manager_root/venv/bin/mesh-radio" ]; then
+    echo "Mesh Radio Manager installation did not create its CLI launcher." >&2
+    exit 1
+fi
 ln -sfn "$manager_root/venv/bin/mesh-radio" /usr/local/bin/mesh-radio
+if ! /usr/local/bin/mesh-radio --version >/dev/null; then
+    echo "Mesh Radio Manager CLI launcher validation failed." >&2
+    exit 1
+fi
 install -m 0750 "$manager_root/source/update.sh" "$manager_root/update.sh"
 install -m 0755 "$manager_root/source/scripts/mesh-radio-menu" /usr/local/bin/mesh-radio-menu
 install -m 0644 "$manager_root/source/scripts/mesh-radio-manager-profile.sh" /etc/profile.d/mesh-radio-manager.sh

@@ -27,7 +27,13 @@ from .meshtastic import (
     run_daemon,
     upgrade,
 )
-from .openhop import OPENHOP_UNIT, installed as openhop_installed, metadata as openhop_metadata, prepare_runtime_config as prepare_openhop
+from .openhop import (
+    OPENHOP_UNIT,
+    installed as openhop_installed,
+    metadata as openhop_metadata,
+    migrate_newer_runtime_config,
+    prepare_persistent_config as prepare_openhop,
+)
 from .profiles import MESHTASTIC_PROFILES
 from .services import action, logs, state
 from .usb import enumerate_devices, parse_selector
@@ -114,6 +120,7 @@ def parser() -> argparse.ArgumentParser:
     web.add_parser("enable")
     internal = commands.add_parser("internal").add_subparsers(dest="internal_command", required=True)
     internal.add_parser("prepare-openhop")
+    internal.add_parser("migrate-openhop-config")
     internal.add_parser("run-meshtastic")
     return root
 
@@ -216,7 +223,9 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
         elif args.command == "internal":
             if args.internal_command == "prepare-openhop":
-                value = {"runtime_config": str(prepare_openhop())}
+                value = {"persistent_config": str(prepare_openhop())}
+            elif args.internal_command == "migrate-openhop-config":
+                value = {"migrated_legacy_runtime_config": migrate_newer_runtime_config()}
             else:
                 return run_daemon()
         elif args.command == "update":

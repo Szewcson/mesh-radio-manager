@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import copy
+import os
 from pathlib import Path
 import subprocess
+import tempfile
 from typing import Any, Mapping
 
 import yaml
@@ -15,6 +17,9 @@ from .usb import enumerate_devices
 
 OPENHOP_CHECKOUT = Path("/root/openhop-repeater")
 OPENHOP_CONFIG = Path("/etc/openhop_repeater/config.yaml")
+# Previous releases started openHop with a generated configuration in /run.
+# That made normal dashboard saves disappear at the next restart.  The service
+# now starts against OPENHOP_CONFIG, which is the upstream persistent path.
 RUNTIME_CONFIG = Path("/run/mesh-radio-manager/openhop-config.yaml")
 OPENHOP_UNIT = "openhop-repeater.service"
 
@@ -57,11 +62,28 @@ def _load_yaml(path: Path) -> dict[str, Any]:
     return value
 
 
-def _write_runtime_yaml(path: Path, value: Mapping[str, Any]) -> None:
+def _atomic_write_yaml(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
-    temporary.write_text(yaml.safe_dump(dict(value), default_flow_style=False, sort_keys=False), encoding="utf-8")
-    temporary.replace(path)
+    try:
+        existing = path.stat()
+    except FileNotFoundError:
+        existing = None
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            yaml.safe_dump(dict(value), output, default_flow_style=False, sort_keys=False)
+            output.flush()
+            os.fsync(output.fileno())
+        if existing is None:
+            os.chmod(temporary, 0o640)
+        else:
+            os.chown(temporary, existing.st_uid, existing.st_gid)
+            os.chmod(temporary, existing.st_mode & 0o7777)
+        os.replace(temporary, path)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
 
 def _ch341_selector(device: Any) -> dict[str, Any]:
@@ -76,13 +98,18 @@ def _ch341_selector(device: Any) -> dict[str, Any]:
     }
 
 
-def prepare_runtime_config(
+def prepare_persistent_config(
     *,
     source: Path = OPENHOP_CONFIG,
-    destination: Path = RUNTIME_CONFIG,
     manager_config: Path = CONFIG_PATH,
 ) -> Path:
-    """Generate, never persist, the openHop USB selector overlay."""
+    """Persist only the resolved CH341 selector in openHop's real config.
+
+    openHop's dashboard owns credentials, API tokens, and all ordinary
+    configuration.  It saves them to ``source``.  A runtime-only overlay made
+    those saves vanish, so the manager updates just its dynamic USB selector
+    in that same canonical file immediately before each service start.
+    """
     if not source.exists():
         raise ManagerError("Official openHop configuration is missing; install openHop first")
     with configuration_lock():
@@ -99,5 +126,27 @@ def prepare_runtime_config(
             for radio in radios:
                 if isinstance(radio, dict) and radio.get("radio_type") == "sx1262_ch341":
                     radio["ch341"] = selector
-        _write_runtime_yaml(destination, output)
-    return destination
+        _atomic_write_yaml(source, output)
+    return source
+
+
+def migrate_newer_runtime_config(
+    *,
+    source: Path = OPENHOP_CONFIG,
+    runtime: Path = RUNTIME_CONFIG,
+) -> bool:
+    """Recover a newer legacy runtime config once during an upgrade.
+
+    Older manager releases instructed openHop to save its dashboard changes to
+    ``runtime``.  If that file is newer than the canonical config, preserve
+    those user changes before switching the service back to ``source``.
+    """
+    if not runtime.is_file():
+        return False
+    try:
+        if source.exists() and runtime.stat().st_mtime_ns <= source.stat().st_mtime_ns:
+            return False
+    except OSError as error:
+        raise ManagerError(f"Cannot compare openHop configuration timestamps: {error}") from error
+    _atomic_write_yaml(source, _load_yaml(runtime))
+    return True

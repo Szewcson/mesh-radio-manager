@@ -96,6 +96,10 @@ if getent group repeater >/dev/null 2>&1; then
     chmod 0640 "$config_dir/config.yaml"
 fi
 
+# Recover dashboard changes that an older manager release placed in /run
+# before installing the persistence-safe openHop drop-in.
+/usr/local/bin/mesh-radio internal migrate-openhop-config
+
 if [ "$enable_web" -eq 1 ]; then
     /usr/local/bin/mesh-radio install-integration --web
 else

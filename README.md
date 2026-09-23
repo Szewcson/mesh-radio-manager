@@ -159,11 +159,12 @@ their configurations in place.
 
 ## Systemd design and limitation
 
-`20-mesh-radio-manager.conf` adds an `ExecStartPre` that validates assignments
-and generates `/run/mesh-radio-manager/openhop-config.yaml`; it then replaces
-only the service command with the same public upstream module and points it at
-that ephemeral copy. The vendor unit and openHop configuration remain
-untouched. The installer verifies that the known upstream unit command is
+`20-mesh-radio-manager.conf` adds an `ExecStartPre` that validates the openHop
+assignment and updates only the dynamic CH341 USB selector in
+`/etc/openhop_repeater/config.yaml`. It deliberately leaves upstream's original
+`ExecStart` in place: the openHop dashboard therefore continues to save its
+password, API token, and all normal settings to its canonical persistent
+configuration. The installer verifies that the known upstream unit command is
 present before enabling this integration. If upstream changes its unit
 contract, disable the drop-in and update this manager before continuing.
 

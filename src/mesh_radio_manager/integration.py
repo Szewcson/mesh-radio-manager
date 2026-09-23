@@ -19,9 +19,10 @@ OPENHOP_DROPIN_TEXT = """# Managed by Mesh Radio Manager. Vendor openHop files a
 [Service]
 RuntimeDirectory=mesh-radio-manager
 RuntimeDirectoryMode=0750
-ExecStartPre=/usr/local/bin/mesh-radio internal prepare-openhop
-ExecStart=
-ExecStart=/opt/openhop_repeater/venv/bin/python -m repeater.main --config /run/mesh-radio-manager/openhop-config.yaml
+# Runs as root solely to resolve the assigned USB adapter and atomically update
+# its selector in openHop's canonical config. ExecStart remains upstream's
+# original command so dashboard password/token saves stay persistent.
+ExecStartPre=+/usr/local/bin/mesh-radio internal prepare-openhop
 """
 
 MESHTASTIC_DROPIN_TEXT = """# Managed by Mesh Radio Manager. USB isolation happens in a private namespace.

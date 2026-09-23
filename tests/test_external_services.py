@@ -118,6 +118,19 @@ class ExternalServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ManagerError, "Meshtastic TCP API"):
             validate_web_ui_enable(data, 4403, "")
 
+    def test_meshtastic_web_ui_setting_can_be_saved(self) -> None:
+        with patch("mesh_radio_manager.meshtastic.load", return_value={"meshtastic": {}, "assignments": {}}), patch(
+            "mesh_radio_manager.meshtastic.configuration_lock", return_value=nullcontext()
+        ), patch("mesh_radio_manager.meshtastic.validate_web_ui_enable"), patch(
+            "mesh_radio_manager.meshtastic.save"
+        ) as save_config:
+            from mesh_radio_manager.meshtastic import set_web_ui
+
+            previous, selected = set_web_ui(True, port=9443)
+        self.assertEqual(previous, {"enabled": False, "port": 9443})
+        self.assertEqual(selected, {"enabled": True, "port": 9443})
+        self.assertTrue(save_config.called)
+
     def test_backup_restore(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

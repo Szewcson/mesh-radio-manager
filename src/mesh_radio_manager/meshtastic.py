@@ -13,7 +13,7 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
-from .assignments import CONFIG_PATH, configuration_lock, load, validate
+from .assignments import CONFIG_PATH, configuration_lock, load, save, validate
 from .errors import ManagerError
 from .profiles import effective_meshtastic_config
 from .usb import DEV_USB_ROOT, enumerate_devices

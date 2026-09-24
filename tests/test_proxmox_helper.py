@@ -529,7 +529,7 @@ Description: Mesh Radio Manager signed package archive
         self.assertIn("flock -n 9", apt_setup)
         self.assertIn("package-lifecycle.lock", apt_setup)
         self.assertIn("--max-filesize 1048576", apt_setup)
-        self.assertIn("actions/upload-pages-artifact@v4", release)
+        self.assertIn("actions/upload-pages-artifact@v5", release)
         self.assertIn("actions/upload-artifact@v7", release)
         self.assertIn("actions/deploy-pages@v5", release)
         self.assertIn("actions/download-artifact@v7", release)

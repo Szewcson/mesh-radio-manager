@@ -188,7 +188,7 @@ jobs:
         with:
           subject-path: 'dist/mesh-radio-manager-*.tar.gz'
       - name: Upload GitHub Pages content
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist/pages
       - name: Upload release assets for publication

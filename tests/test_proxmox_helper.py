@@ -62,6 +62,7 @@ Description: Mesh Radio Manager signed package archive
         self.assertIn("OPENHOP_PRIVILEGED_PATTERN", script)
         self.assertIn("mode_context_count", script)
         self.assertIn("OPENHOP_CH341_PROMPT", script)
+        self.assertIn('index($0, "# ── USB passthrough") == 1', script)
         self.assertIn("USB compatibility block changed", script)
         self.assertIn("select_host_radio", script)
         self.assertIn("configure_selected_radios_in_lxc", script)

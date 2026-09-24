@@ -1,3 +1,10 @@
+mesh-radio-manager (0.1.14-1) unstable; urgency=medium
+
+  * Match the verified upstream USB section with portable literal checks so
+    the unprivileged installer works with Proxmox's default mawk.
+
+ -- Mesh Radio Manager contributors <noreply@invalid.example>  Wed, 24 Sep 2026 00:00:00 +0000
+
 mesh-radio-manager (0.1.13-1) unstable; urgency=medium
 
   * Use the Node 24-based GitHub Pages artifact publisher.

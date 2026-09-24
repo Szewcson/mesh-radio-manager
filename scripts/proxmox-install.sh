@@ -441,8 +441,8 @@ patch_upstream_for_unprivileged_lxc() {
     msg_error "Refusing to guess at an unprivileged conversion."
     exit 1
   fi
-  usb_start_count=$(grep -Ec '^# ── USB passthrough([[:space:]]+─+)?$' "$openhop_script" || true)
-  container_start_count=$(grep -Ec '^# ── Start container( & wait for network)?([[:space:]]+─+)?$' "$openhop_script" || true)
+  usb_start_count=$(grep -Fc '# ── USB passthrough' "$openhop_script" || true)
+  container_start_count=$(grep -Fc '# ── Start container' "$openhop_script" || true)
   if [[ "$usb_start_count" != 1 || "$container_start_count" != 1 ]]; then
     msg_error "The official openHop installer USB section no longer has the expected boundaries."
     msg_error "Refusing to guess at an unprivileged USB policy."
@@ -474,10 +474,10 @@ patch_upstream_for_unprivileged_lxc() {
   # for its privileged mode. Require both policies inside the one identified
   # section before deleting it, then provision two narrow devN grants later.
   if ! awk '
-    /^# ── USB passthrough([[:space:]]+─+)?$/ { if (inside) exit 1; inside = 1; starts += 1; next }
-    inside && /^# ── Start container( & wait for network)?([[:space:]]+─+)?$/ { inside = 0; ends += 1 }
-    inside && /lxc\.cgroup2\.devices\.allow: c 189:\* rwm/ { wildcard += 1 }
-    inside && /ATTR\{idVendor\}=="1a86", ATTR\{idProduct\}=="5512", MODE="0666"/ { broad_rule += 1 }
+    index($0, "# ── USB passthrough") == 1 { if (inside) exit 1; inside = 1; starts += 1; next }
+    inside && index($0, "# ── Start container") == 1 { inside = 0; ends += 1 }
+    inside && index($0, "lxc.cgroup2.devices.allow: c 189:* rwm") { wildcard += 1 }
+    inside && index($0, "ATTR{idVendor}==\"1a86\", ATTR{idProduct}==\"5512\", MODE=\"0666\"") { broad_rule += 1 }
     !inside { print }
     END { exit starts != 1 || ends != 1 || inside || wildcard != 1 || broad_rule != 1 }
   ' "$openhop_script" >"$temporary"; then

@@ -192,9 +192,16 @@ jobs:
       - name: Publish immutable release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
+          release_assets=(
+            dist/mesh-radio-manager_*_all.deb
+            dist/mesh-radio-manager-*.tar.gz
+            dist/SHA256SUMS
+            dist/apt-source.env
+          )
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            gh release upload "$GITHUB_REF_NAME" "${release_assets[@]}" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
+            gh release create "$GITHUB_REF_NAME" "${release_assets[@]}" --generate-notes --verify-tag
           fi

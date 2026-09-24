@@ -31,7 +31,7 @@ Use a versioned release bundle, not a mutable `main` branch script. Download
 the bundle and verify its GitHub build provenance before extracting it:
 
 ```bash
-VERSION=v0.1.4
+VERSION=v0.1.5
 curl --fail --location --proto '=https' --tlsv1.2 -O \
   "https://github.com/Szewcson/mesh-radio-manager/releases/download/${VERSION}/mesh-radio-manager-${VERSION}.tar.gz"
 gh attestation verify "mesh-radio-manager-${VERSION}.tar.gz" -R Szewcson/mesh-radio-manager
@@ -44,7 +44,7 @@ install the verified manager package bundled with that release:
 
 ```bash
 ./scripts/proxmox-install.sh \
-  --manager-package ./mesh-radio-manager_0.1.4-1_all.deb \
+  --manager-package ./mesh-radio-manager_0.1.5-1_all.deb \
   --channel alpha
 ```
 
@@ -52,7 +52,7 @@ For an existing official openHop LXC, provide its CTID instead:
 
 ```bash
 ./scripts/proxmox-install.sh --ctid 103 \
-  --manager-package ./mesh-radio-manager_0.1.4-1_all.deb \
+  --manager-package ./mesh-radio-manager_0.1.5-1_all.deb \
   --channel alpha --unattended
 ```
 
@@ -96,7 +96,7 @@ Create the LXC with the official openHop installer. Inside that LXC, install a
 verified release package:
 
 ```bash
-sudo apt-get install ./mesh-radio-manager_0.1.4-1_all.deb
+sudo apt-get install ./mesh-radio-manager_0.1.5-1_all.deb
 ```
 
 The package preserves `/etc/openhop_repeater/config.yaml`, writes manager state

@@ -629,7 +629,7 @@ fi
 
 if ((unprivileged)); then
   msg_info "Bootstrapping exactly the selected USB radios into unprivileged LXC ${ctid}"
-  /usr/local/sbin/mesh-radio-pve --ctid "$ctid" --bootstrap-usb \
+  bash "$script_dir/proxmox-usb.sh" bootstrap --ctid "$ctid" \
     --openhop-selector "$openhop_selector" --meshtastic-selector "$meshtastic_selector" --yes
   if ((manual_radio_configuration)); then
     msg_warn "Radio handoff is bootstrapped only; assignments and final validation were left for manual configuration."
@@ -640,7 +640,7 @@ if ((unprivileged)); then
       exit 1
     fi
     msg_info "Finalizing device-scoped USB access and restarting LXC ${ctid}"
-    if ! /usr/local/sbin/mesh-radio-pve --ctid "$ctid" --secure-usb \
+    if ! bash "$script_dir/proxmox-usb.sh" secure --ctid "$ctid" \
       --openhop-selector "$openhop_selector" --meshtastic-selector "$meshtastic_selector" --yes; then
       msg_error "Automatic finalization failed; the CT remains in its previously recorded bootstrap state."
       exit 1

@@ -1,3 +1,10 @@
+mesh-radio-manager (0.1.15-1) unstable; urgency=medium
+
+  * Avoid re-entering the Proxmox host lifecycle lock during fresh
+    unprivileged USB bootstrap and finalization.
+
+ -- Mesh Radio Manager contributors <noreply@invalid.example>  Thu, 24 Sep 2026 00:00:00 +0000
+
 mesh-radio-manager (0.1.14-1) unstable; urgency=medium
 
   * Match the verified upstream USB section with portable literal checks so

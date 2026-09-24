@@ -55,8 +55,14 @@ Description: Mesh Radio Manager signed package archive
         self.assertIn('lxc.mount.entry: /dev/bus/usb', script)
         self.assertIn('ATTR{idVendor}=="1a86"', script)
         self.assertIn('proxmox-usb.sh', script)
-        self.assertIn('--secure-usb', script)
-        self.assertIn('--bootstrap-usb', script)
+        self.assertIn(
+            'bash "$script_dir/proxmox-usb.sh" bootstrap --ctid "$ctid"',
+            script,
+        )
+        self.assertIn(
+            'bash "$script_dir/proxmox-usb.sh" secure --ctid "$ctid"',
+            script,
+        )
         self.assertIn("--unprivileged", script)
         self.assertIn("patch_upstream_for_unprivileged_lxc", script)
         self.assertIn("OPENHOP_PRIVILEGED_PATTERN", script)
@@ -67,7 +73,14 @@ Description: Mesh Radio Manager signed package archive
         self.assertIn("select_host_radio", script)
         self.assertIn("configure_selected_radios_in_lxc", script)
         self.assertIn("--manual-radio-configuration", script)
-        self.assertIn("--bootstrap-usb", script)
+        self.assertNotIn(
+            '/usr/local/sbin/mesh-radio-pve --ctid "$ctid" --bootstrap-usb',
+            script,
+        )
+        self.assertNotIn(
+            '/usr/local/sbin/mesh-radio-pve --ctid "$ctid" --secure-usb',
+            script,
+        )
         self.assertIn("unprivileged", script)
         self.assertIn("proxmox-manage.sh", script)
         self.assertIn("gnupg", script)

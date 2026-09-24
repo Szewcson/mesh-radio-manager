@@ -31,10 +31,15 @@ jobs:
       - name: Import the dedicated APT archive signing key
         env:
           APT_GPG_PRIVATE_KEY_BASE64: ${{ secrets.APT_GPG_PRIVATE_KEY_BASE64 }}
+          APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
           APT_GPG_FINGERPRINT: ${{ vars.APT_GPG_FINGERPRINT }}
         run: |
           test -n "$APT_GPG_PRIVATE_KEY_BASE64" || {
             echo "Missing APT_GPG_PRIVATE_KEY_BASE64 release secret." >&2
+            exit 1
+          }
+          test -n "$APT_GPG_PASSPHRASE" || {
+            echo "Missing APT_GPG_PASSPHRASE release secret." >&2
             exit 1
           }
           test -n "$APT_GPG_FINGERPRINT" || {
@@ -60,6 +65,15 @@ jobs:
             echo "Imported secret key does not match APT_GPG_FINGERPRINT." >&2
             exit 1
           }
+          # Fail before publishing if the protected signing key cannot be
+          # unlocked. gpg-agent caches this unlock for the immediate reprepro
+          # invocation; the passphrase never enters GITHUB_ENV or command args.
+          printf '%s' "$APT_GPG_PASSPHRASE" | GNUPGHOME="$gnupg_home" gpg \
+            --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --local-user "$actual_fingerprint" --armor --detach-sign \
+            --output "$gnupg_home/signing-check.asc" /dev/null
+          rm -f "$gnupg_home/signing-check.asc"
+          unset APT_GPG_PASSPHRASE
           printf 'APT_GPG_FINGERPRINT=%s\n' "$actual_fingerprint" >>"$GITHUB_ENV"
       - name: Check tag and install build tools
         run: |

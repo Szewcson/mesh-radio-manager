@@ -31,7 +31,7 @@ Use a versioned release bundle, not a mutable `main` branch script. Download
 the bundle and verify its GitHub build provenance before extracting it:
 
 ```bash
-VERSION=v0.1.8
+VERSION=v0.1.9
 PACKAGE_VERSION=${VERSION#v}
 curl --fail --location --proto '=https' --tlsv1.2 -O \
   "https://github.com/Szewcson/mesh-radio-manager/releases/download/${VERSION}/mesh-radio-manager-${VERSION}.tar.gz"

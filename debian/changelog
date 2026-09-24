@@ -1,3 +1,10 @@
+mesh-radio-manager (0.1.9-1) unstable; urgency=medium
+
+  * Unlock the dedicated APT signing key noninteractively in the protected
+    release environment before generating signed repository metadata.
+
+ -- Mesh Radio Manager contributors <noreply@invalid.example>  Wed, 24 Sep 2026 00:00:00 +0000
+
 mesh-radio-manager (0.1.8-1) unstable; urgency=medium
 
   * Release unprivileged, device-scoped Proxmox LXC support.

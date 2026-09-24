@@ -532,6 +532,9 @@ Description: Mesh Radio Manager signed package archive
         self.assertIn("actions/deploy-pages@v5", release)
         self.assertIn("actions/download-artifact@v7", release)
         self.assertIn("APT_GPG_PRIVATE_KEY_BASE64", release)
+        self.assertIn("APT_GPG_PASSPHRASE", release)
+        self.assertIn("--pinentry-mode loopback", release)
+        self.assertIn("--passphrase-fd 0", release)
         self.assertIn("Remove temporary APT archive key", release)
         self.assertIn('gpgconf --homedir "$key_home" --kill all', release)
         self.assertIn("Install signing prerequisites", release)
@@ -551,6 +554,7 @@ Description: Mesh Radio Manager signed package archive
         self.assertNotIn('gh release create "$GITHUB_REF_NAME" dist/*', release)
         documentation = (root / "docs/apt-repository.md").read_text(encoding="utf-8")
         self.assertIn("external secret manager", documentation)
+        self.assertIn("APT_GPG_PASSPHRASE", documentation)
         self.assertNotIn("KeePassXC", documentation)
         self.assertNotIn("quick-generate-key", documentation)
 

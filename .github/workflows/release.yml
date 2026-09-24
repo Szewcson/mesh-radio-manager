@@ -153,7 +153,7 @@ jobs:
         with:
           path: dist/pages
       - name: Upload release assets for publication
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-assets
           if-no-files-found: error
@@ -176,7 +176,7 @@ jobs:
     steps:
       - name: Publish signed APT archive to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   publish-release:
     needs: deploy-apt-repository
@@ -185,7 +185,7 @@ jobs:
       contents: write
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: release-assets
           path: dist

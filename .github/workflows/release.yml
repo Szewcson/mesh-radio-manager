@@ -111,7 +111,7 @@ jobs:
           Label: Mesh Radio Manager
           Codename: stable
           Suite: stable
-          Architectures: amd64 arm64 all source
+          Architectures: amd64 arm64 source
           Components: main
           Description: Mesh Radio Manager signed package archive
           SignWith: ${APT_GPG_FINGERPRINT}

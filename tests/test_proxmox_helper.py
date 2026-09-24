@@ -1,11 +1,37 @@
 from __future__ import annotations
 
 from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 import tomllib
 import unittest
 
 
 class ProxmoxHelperTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("reprepro"), "reprepro is not installed")
+    def test_reprepro_accepts_release_architectures(self) -> None:
+        distribution = """\
+Origin: Mesh Radio Manager
+Label: Mesh Radio Manager
+Codename: stable
+Suite: stable
+Architectures: amd64 arm64 source
+Components: main
+Description: Mesh Radio Manager signed package archive
+"""
+        with tempfile.TemporaryDirectory(prefix="mesh-radio-manager-reprepro-") as directory:
+            configuration = Path(directory) / "conf"
+            configuration.mkdir()
+            (configuration / "distributions").write_text(distribution, encoding="utf-8")
+            result = subprocess.run(
+                ["reprepro", "--basedir", directory, "export", "stable"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_host_helper_reuses_official_openhop_and_installs_verified_manager_package(self) -> None:
         script = (Path(__file__).parents[1] / "scripts/proxmox-install.sh").read_text(encoding="utf-8")
         self.assertIn("openhop-dev/openhop_repeater/main/scripts/proxmox-install.sh", script)
@@ -103,6 +129,7 @@ class ProxmoxHelperTests(unittest.TestCase):
         self.assertIn("install-integration", postinst)
         self.assertIn("dpkg-buildpackage", ci)
         self.assertIn("build-essential", ci)
+        self.assertIn("reprepro", ci)
         self.assertIn("actions/checkout@v7", ci)
         self.assertIn("actions/setup-python@v7", ci)
         self.assertIn("actions/attest@v4", release)
@@ -129,6 +156,8 @@ class ProxmoxHelperTests(unittest.TestCase):
             release.index("mkdir -p dist/release/mesh-radio-manager"),
             release.index(">dist/apt-source.env"),
         )
+        self.assertIn("Architectures: amd64 arm64 source", release)
+        self.assertNotIn("Architectures: amd64 arm64 all source", release)
         documentation = (root / "docs/apt-repository.md").read_text(encoding="utf-8")
         self.assertIn("external secret manager", documentation)
         self.assertNotIn("KeePassXC", documentation)

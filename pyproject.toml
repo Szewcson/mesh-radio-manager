@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mesh-radio-manager"
-version = "0.1.3"
+version = "0.1.4"
 description = "Independent USB LoRa radio assignments for openHop and meshtasticd"
 readme = "README.md"
 requires-python = ">=3.11"

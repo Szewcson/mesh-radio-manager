@@ -10,8 +10,8 @@ DEFAULT_CHANNEL="alpha"
 MANAGER_TAG="mesh-radio-manager"
 OPENHOP_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="openhop-repeater"'
 MANAGER_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="mesh-radio-manager"'
-OPENHOP_PRIVILEGED_LINE='  --unprivileged 0 \'
-OPENHOP_UNPRIVILEGED_LINE='  --unprivileged 1 \'
+OPENHOP_PRIVILEGED_LINE="  --unprivileged 0 \\"
+OPENHOP_UNPRIVILEGED_LINE="  --unprivileged 1 \\"
 script_dir=$(
   CDPATH=''
   cd -- "$(dirname -- "$0")"

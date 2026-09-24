@@ -208,11 +208,11 @@ discover_ch341() {
     id_path=$(id_path_for_node "$node")
     [[ "$serial" != *"$RECORD_SEPARATOR"* && "$serial" != *$'\n'* ]] || continue
     [[ "$port_path" != *"$RECORD_SEPARATOR"* && "$id_path" != *"$RECORD_SEPARATOR"* && -n "$port_path" && -n "$id_path" ]] || continue
-    valid_port_selector "port:$port_path" && valid_udev_value "$id_path" &&
-      { [[ -z "$serial" ]] || valid_udev_value "$serial"; } || {
+    if ! valid_port_selector "port:$port_path" || ! valid_udev_value "$id_path" ||
+      { [[ -n "$serial" ]] && ! valid_udev_value "$serial"; }; then
         msg_warn "Ignoring CH341 device with unsafe USB metadata at $node."
         continue
-      }
+    fi
     printf '%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s\n' \
       "${vid,,}" "$RECORD_SEPARATOR" "${pid,,}" "$RECORD_SEPARATOR" "$bus" "$RECORD_SEPARATOR" "$address" "$RECORD_SEPARATOR" \
       "$node" "$RECORD_SEPARATOR" "$serial" "$RECORD_SEPARATOR" "$port_path" "$RECORD_SEPARATOR" "$id_path"
@@ -560,7 +560,11 @@ load_state() {
       *) msg_error "Unexpected key in USB state: $key"; return 1 ;;
     esac
   done <"$file"
-  [[ "$state_version" == 1 || "$state_version" == 2 || "$state_version" == 3 ]] && [[ "$state_ctid" == "$ctid" ]] || {
+  case "$state_version" in
+    1|2|3) ;;
+    *) msg_error "Invalid USB state file $file."; return 1 ;;
+  esac
+  [[ "$state_ctid" == "$ctid" ]] || {
     msg_error "Invalid USB state file $file."; return 1;
   }
   if [[ "$state_version" == 1 ]]; then
@@ -592,16 +596,16 @@ load_state() {
       ;;
     *) msg_error "USB state has an invalid container privilege mode."; return 1 ;;
   esac
-  validate_selector "$state_openhop_selector" && validate_selector "$state_meshtastic_selector" || {
+  if ! validate_selector "$state_openhop_selector" || ! validate_selector "$state_meshtastic_selector"; then
     msg_error "USB state contains invalid selectors."; return 1;
-  }
+  fi
   [[ "$state_openhop_dev" =~ ^dev[0-9]+$ && "$state_meshtastic_dev" =~ ^dev[0-9]+$ ]] || {
     msg_error "USB state contains invalid PVE devN slots."; return 1;
   }
-  valid_port_selector "port:$state_openhop_port_path" && valid_port_selector "port:$state_meshtastic_port_path" &&
-    valid_udev_value "$state_openhop_id_path" && valid_udev_value "$state_meshtastic_id_path" || {
-      msg_error "USB state contains invalid device identity fields."; return 1;
-    }
+  if ! valid_port_selector "port:$state_openhop_port_path" || ! valid_port_selector "port:$state_meshtastic_port_path" ||
+    ! valid_udev_value "$state_openhop_id_path" || ! valid_udev_value "$state_meshtastic_id_path"; then
+    msg_error "USB state contains invalid device identity fields."; return 1;
+  fi
 }
 
 apply_state_device_access() {

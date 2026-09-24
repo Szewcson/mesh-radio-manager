@@ -533,6 +533,7 @@ Description: Mesh Radio Manager signed package archive
         self.assertIn("actions/download-artifact@v7", release)
         self.assertIn("APT_GPG_PRIVATE_KEY_BASE64", release)
         self.assertIn("APT_GPG_PASSPHRASE", release)
+        self.assertIn('if [[ -n "$APT_GPG_PASSPHRASE" ]]', release)
         self.assertIn("--pinentry-mode loopback", release)
         self.assertIn("--passphrase-fd 0", release)
         self.assertIn("Remove temporary APT archive key", release)

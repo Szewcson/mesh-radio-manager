@@ -38,10 +38,6 @@ jobs:
             echo "Missing APT_GPG_PRIVATE_KEY_BASE64 release secret." >&2
             exit 1
           }
-          test -n "$APT_GPG_PASSPHRASE" || {
-            echo "Missing APT_GPG_PASSPHRASE release secret." >&2
-            exit 1
-          }
           test -n "$APT_GPG_FINGERPRINT" || {
             echo "Missing APT_GPG_FINGERPRINT repository variable." >&2
             exit 1
@@ -65,13 +61,23 @@ jobs:
             echo "Imported secret key does not match APT_GPG_FINGERPRINT." >&2
             exit 1
           }
-          # Fail before publishing if the protected signing key cannot be
-          # unlocked. gpg-agent caches this unlock for the immediate reprepro
-          # invocation; the passphrase never enters GITHUB_ENV or command args.
-          printf '%s' "$APT_GPG_PASSPHRASE" | GNUPGHOME="$gnupg_home" gpg \
-            --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+          # Check signing before archive publication. A passphrase is optional:
+          # it is used only when the dedicated CI key is passphrase-protected.
+          # It never enters GITHUB_ENV or command-line arguments.
+          if [[ -n "$APT_GPG_PASSPHRASE" ]]; then
+            if ! printf '%s' "$APT_GPG_PASSPHRASE" | GNUPGHOME="$gnupg_home" gpg \
+              --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+              --local-user "$actual_fingerprint" --armor --detach-sign \
+              --output "$gnupg_home/signing-check.asc" /dev/null; then
+              echo "Could not unlock the archive signing key with APT_GPG_PASSPHRASE." >&2
+              exit 1
+            fi
+          elif ! GNUPGHOME="$gnupg_home" gpg --batch --yes --pinentry-mode error \
             --local-user "$actual_fingerprint" --armor --detach-sign \
-            --output "$gnupg_home/signing-check.asc" /dev/null
+            --output "$gnupg_home/signing-check.asc" /dev/null; then
+            echo "Could not sign with the archive key. Add APT_GPG_PASSPHRASE only if the key is passphrase-protected." >&2
+            exit 1
+          fi
           rm -f "$gnupg_home/signing-check.asc"
           unset APT_GPG_PASSPHRASE
           printf 'APT_GPG_FINGERPRINT=%s\n' "$actual_fingerprint" >>"$GITHUB_ENV"

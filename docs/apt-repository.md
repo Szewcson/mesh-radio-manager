@@ -38,10 +38,11 @@ In the GitHub repository settings:
   deploy to it. Add a required reviewer when a separate maintainer is
   available; do not require self-review on a sole-maintainer repository.
 - Add the base64 private-key export as the environment secret
-  `APT_GPG_PRIVATE_KEY_BASE64` and the key's passphrase as the separate
-  environment secret `APT_GPG_PASSPHRASE`. Keep both values in your external
-  secret manager; the workflow never writes the passphrase to `GITHUB_ENV` or
-  command-line arguments.
+  `APT_GPG_PRIVATE_KEY_BASE64`. If that dedicated export is passphrase
+  protected, also add its passphrase as `APT_GPG_PASSPHRASE`; an unprotected
+  CI key needs no third secret. Keep all supplied values in your external
+  secret manager; the workflow never writes the optional passphrase to
+  `GITHUB_ENV` or command-line arguments.
 - Add the printed primary fingerprint as repository variable
   `APT_GPG_FINGERPRINT`.
 - Enable GitHub Pages with **GitHub Actions** as its publishing source. Protect

@@ -1,3 +1,10 @@
+mesh-radio-manager (0.1.10-1) unstable; urgency=medium
+
+  * Validate historical GitHub Release packages before rebuilding the signed
+    APT archive and exclude drafts, prereleases, and the current tag.
+
+ -- Mesh Radio Manager contributors <noreply@invalid.example>  Wed, 24 Sep 2026 00:00:00 +0000
+
 mesh-radio-manager (0.1.9-1) unstable; urgency=medium
 
   * Unlock the dedicated APT signing key noninteractively in the protected

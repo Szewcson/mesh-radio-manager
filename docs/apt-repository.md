@@ -71,8 +71,8 @@ After review, set the package version in `pyproject.toml` and
 `debian/changelog`, commit the change, and create a matching signed tag:
 
 ```bash
-git tag -a v0.1.9 -m 'Mesh Radio Manager v0.1.9'
-git push origin v0.1.9
+git tag -a v0.1.10 -m 'Mesh Radio Manager v0.1.10'
+git push origin v0.1.10
 ```
 
 The workflow requires the tag and Python package version to agree. It builds
@@ -91,7 +91,7 @@ For a manual package installation, use the manifest from that same verified
 bundle:
 
 ```bash
-sudo apt-get install ./mesh-radio-manager_0.1.9-1_all.deb
+sudo apt-get install ./mesh-radio-manager_0.1.10-1_all.deb
 sudo mesh-radio-apt-repository --manifest ./apt-source.env
 sudo mesh-radio manager update
 ```

@@ -112,14 +112,33 @@ jobs:
       - name: Build signed APT archive from release packages
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           mkdir -p dist/apt/conf dist/apt-packages dist/pages/apt
           cp dist/mesh-radio-manager_*_all.deb dist/apt-packages/
           while IFS= read -r previous_tag; do
-            gh release download "$previous_tag" \
+            [ -n "$previous_tag" ] || continue
+            # The current tag cannot have assets yet: publication happens only
+            # after this signed archive and its Pages deployment succeed.
+            [ "$previous_tag" = "$GITHUB_REF_NAME" ] && continue
+
+            if ! gh release view "$previous_tag" --repo "$GH_REPO" >/dev/null 2>&1; then
+              echo "Skipping $previous_tag: no GitHub release exists."
+              continue
+            fi
+
+            if ! gh release download "$previous_tag" \
+              --repo "$GH_REPO" \
               --pattern 'mesh-radio-manager_*_all.deb' \
-              --dir dist/apt-packages --skip-existing
-          done < <(gh release list --limit 100 --json tagName --jq '.[].tagName')
+              --dir dist/apt-packages --skip-existing; then
+              echo "::error::Release $previous_tag exists but has no downloadable mesh-radio-manager .deb asset."
+              exit 1
+            fi
+          done < <(
+            gh release list --repo "$GH_REPO" --limit 100 \
+              --exclude-drafts --exclude-pre-releases \
+              --json tagName --jq '.[].tagName'
+          )
           cat >dist/apt/conf/distributions <<EOF
           Origin: Mesh Radio Manager
           Label: Mesh Radio Manager

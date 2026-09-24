@@ -1,3 +1,10 @@
+mesh-radio-manager (0.1.11-1) unstable; urgency=medium
+
+  * Safely recognise the current upstream openHop LXC creation and USB
+    section formatting for fresh device-scoped unprivileged installations.
+
+ -- Mesh Radio Manager contributors <noreply@invalid.example>  Wed, 24 Sep 2026 00:00:00 +0000
+
 mesh-radio-manager (0.1.10-1) unstable; urgency=medium
 
   * Validate historical GitHub Release packages before rebuilding the signed

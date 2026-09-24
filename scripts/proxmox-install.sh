@@ -10,8 +10,12 @@ DEFAULT_CHANNEL="alpha"
 MANAGER_TAG="mesh-radio-manager"
 OPENHOP_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="openhop-repeater"'
 MANAGER_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="mesh-radio-manager"'
-OPENHOP_PRIVILEGED_LINE="  --unprivileged 0 \\"
-OPENHOP_UNPRIVILEGED_LINE="  --unprivileged 1 \\"
+OPENHOP_PRIVILEGED_PATTERN='^[[:space:]]*--unprivileged[[:space:]]+0[[:space:]]*\\[[:space:]]*$'
+OPENHOP_UNPRIVILEGED_PATTERN='^[[:space:]]*--unprivileged[[:space:]]+1[[:space:]]*\\[[:space:]]*$'
+OPENHOP_CH341_PROMPT='read -p "  Install host-side CH341 udev rule? [y/N]: " -r input'
+OPENHOP_CH341_SELECTION='[[ "${input:-n}" =~ ^[Yy]([Ee][Ss])?$ ]] && INSTALL_CH341_UDEV=true'
+OPENHOP_MODE_SUMMARY_LINE='echo "  Mode: privileged"'
+OPENHOP_UNPRIVILEGED_SUMMARY_LINE='echo "  Mode: unprivileged (device-scoped USB configured after assignment)"'
 script_dir=$(
   CDPATH=''
   cd -- "$(dirname -- "$0")"
@@ -419,23 +423,44 @@ ensure_host_ch341_quirks() {
 }
 
 patch_upstream_for_unprivileged_lxc() {
-  local temporary mode_count usb_start_count container_start_count
-  mode_count=$(grep -Fxc "$OPENHOP_PRIVILEGED_LINE" "$openhop_script" || true)
-  if [[ "$mode_count" != 1 ]]; then
+  local temporary mode_count mode_context_count usb_start_count container_start_count
+  local ch341_prompt_count ch341_selection_count mode_summary_count
+  mode_count=$(grep -Ec "$OPENHOP_PRIVILEGED_PATTERN" "$openhop_script" || true)
+  mode_context_count=$(awk '
+    /^pct create "\$CTID"/ { creates += 1; inside = 1; next }
+    inside && /^[[:space:]]*--unprivileged[[:space:]]+0[[:space:]]*\\[[:space:]]*$/ { modes += 1 }
+    inside && /^[[:space:]]*--ostype[[:space:]]+debian[[:space:]]*$/ { ends += 1; inside = 0 }
+    END {
+      if (creates == 1 && ends == 1 && modes == 1 && !inside) print 1
+      else print 0
+    }
+  ' "$openhop_script")
+  if [[ "$mode_count" != 1 || "$mode_context_count" != 1 ]]; then
     msg_error "The official openHop installer no longer has the expected privileged-LXC creation line."
     msg_error "Refusing to guess at an unprivileged conversion."
     exit 1
   fi
-  usb_start_count=$(grep -Fxc '# ── USB passthrough' "$openhop_script" || true)
-  container_start_count=$(grep -Fxc '# ── Start container' "$openhop_script" || true)
+  usb_start_count=$(grep -Ec '^# ── USB passthrough([[:space:]]+─+)?$' "$openhop_script" || true)
+  container_start_count=$(grep -Ec '^# ── Start container( & wait for network)?([[:space:]]+─+)?$' "$openhop_script" || true)
   if [[ "$usb_start_count" != 1 || "$container_start_count" != 1 ]]; then
     msg_error "The official openHop installer USB section no longer has the expected boundaries."
     msg_error "Refusing to guess at an unprivileged USB policy."
     exit 1
   fi
+  ch341_prompt_count=$(grep -Fxc "$OPENHOP_CH341_PROMPT" "$openhop_script" || true)
+  ch341_selection_count=$(grep -Fxc "$OPENHOP_CH341_SELECTION" "$openhop_script" || true)
+  mode_summary_count=$(grep -Fxc "$OPENHOP_MODE_SUMMARY_LINE" "$openhop_script" || true)
+  if [[ "$ch341_prompt_count" != 1 || "$ch341_selection_count" != 1 || "$mode_summary_count" != 1 ]]; then
+    msg_error "The official openHop installer interactive USB choices changed."
+    msg_error "Refusing to leave a misleading or unsafe unprivileged prompt."
+    exit 1
+  fi
   temporary=$(mktemp "${openhop_script}.unprivileged.XXXXXX")
-  if ! awk -v expected="$OPENHOP_PRIVILEGED_LINE" -v replacement="$OPENHOP_UNPRIVILEGED_LINE" '
-    $0 == expected { print replacement; replacements += 1; next }
+  if ! awk '
+    /^[[:space:]]*--unprivileged[[:space:]]+0[[:space:]]*\\[[:space:]]*$/ {
+      sub(/--unprivileged[[:space:]]+0/, "--unprivileged 1")
+      replacements += 1
+    }
     { print }
     END { exit replacements != 1 }
   ' "$openhop_script" >"$temporary"; then
@@ -445,23 +470,47 @@ patch_upstream_for_unprivileged_lxc() {
   fi
   mv -f -- "$temporary" "$openhop_script"
   # The upstream script's USBFS wildcard and MODE=0666 rule are valid only
-  # for its privileged mode. This fresh-install mode deletes that exact
-  # section before it executes, then Mesh Radio Manager provisions two narrow
-  # devN grants after the radios are assigned.
+  # for its privileged mode. Require both policies inside the one identified
+  # section before deleting it, then provision two narrow devN grants later.
   if ! awk '
-    /^# ── USB passthrough/ { if (inside) exit 1; inside = 1; starts += 1; next }
-    inside && /^# ── Start container/ { inside = 0; ends += 1 }
+    /^# ── USB passthrough([[:space:]]+─+)?$/ { if (inside) exit 1; inside = 1; starts += 1; next }
+    inside && /^# ── Start container( & wait for network)?([[:space:]]+─+)?$/ { inside = 0; ends += 1 }
+    inside && /lxc\.cgroup2\.devices\.allow: c 189:\* rwm/ { wildcard += 1 }
+    inside && /ATTR\{idVendor\}=="1a86", ATTR\{idProduct\}=="5512", MODE="0666"/ { broad_rule += 1 }
     !inside { print }
-    END { exit starts != 1 || ends != 1 || inside }
+    END { exit starts != 1 || ends != 1 || inside || wildcard != 1 || broad_rule != 1 }
   ' "$openhop_script" >"$temporary"; then
     rm -f -- "$temporary"
     msg_error "Could not remove the official USB compatibility section."
     exit 1
   fi
   mv -f -- "$temporary" "$openhop_script"
-  sed -i 's/Mode: privileged (required for USB passthrough)/Mode: unprivileged (device-scoped USB configured after assignment)/' "$openhop_script"
-  grep -Fqx "$OPENHOP_UNPRIVILEGED_LINE" "$openhop_script" || {
+  if ! awk -v prompt="$OPENHOP_CH341_PROMPT" -v selection="$OPENHOP_CH341_SELECTION" '
+    $0 == prompt || $0 == selection { removed += 1; next }
+    { print }
+    END { exit removed != 2 }
+  ' "$openhop_script" >"$temporary"; then
+    rm -f -- "$temporary"
+    msg_error "Could not disable the official broad CH341 prompt."
+    exit 1
+  fi
+  mv -f -- "$temporary" "$openhop_script"
+  if ! awk -v expected="$OPENHOP_MODE_SUMMARY_LINE" -v replacement="$OPENHOP_UNPRIVILEGED_SUMMARY_LINE" '
+    $0 == expected { print replacement; replacements += 1; next }
+    { print }
+    END { exit replacements != 1 }
+  ' "$openhop_script" >"$temporary"; then
+    rm -f -- "$temporary"
+    msg_error "Could not update the official installer mode summary."
+    exit 1
+  fi
+  mv -f -- "$temporary" "$openhop_script"
+  grep -Eq "$OPENHOP_UNPRIVILEGED_PATTERN" "$openhop_script" || {
     msg_error "Could not set unprivileged LXC mode in the official installer."
+    exit 1
+  }
+  grep -Fqx "$OPENHOP_UNPRIVILEGED_SUMMARY_LINE" "$openhop_script" || {
+    msg_error "Could not update the official installer mode summary."
     exit 1
   }
   if grep -Fq 'lxc.cgroup2.devices.allow: c 189:* rwm' "$openhop_script" ||

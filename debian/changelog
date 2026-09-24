@@ -1,3 +1,10 @@
+mesh-radio-manager (0.1.12-1) unstable; urgency=medium
+
+  * Mark the literal upstream CH341 prompt matcher for ShellCheck so release
+    CI recognises that its embedded expression must not expand locally.
+
+ -- Mesh Radio Manager contributors <noreply@invalid.example>  Wed, 24 Sep 2026 00:00:00 +0000
+
 mesh-radio-manager (0.1.11-1) unstable; urgency=medium
 
   * Safely recognise the current upstream openHop LXC creation and USB

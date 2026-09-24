@@ -13,6 +13,7 @@ MANAGER_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="mesh-radio-manager"'
 OPENHOP_PRIVILEGED_PATTERN='^[[:space:]]*--unprivileged[[:space:]]+0[[:space:]]*\\[[:space:]]*$'
 OPENHOP_UNPRIVILEGED_PATTERN='^[[:space:]]*--unprivileged[[:space:]]+1[[:space:]]*\\[[:space:]]*$'
 OPENHOP_CH341_PROMPT='read -p "  Install host-side CH341 udev rule? [y/N]: " -r input'
+# shellcheck disable=SC2016 # This is an exact literal line in the upstream installer.
 OPENHOP_CH341_SELECTION='[[ "${input:-n}" =~ ^[Yy]([Ee][Ss])?$ ]] && INSTALL_CH341_UDEV=true'
 OPENHOP_MODE_SUMMARY_LINE='echo "  Mode: privileged"'
 OPENHOP_UNPRIVILEGED_SUMMARY_LINE='echo "  Mode: unprivileged (device-scoped USB configured after assignment)"'

@@ -61,8 +61,10 @@ project. For a new LXC it modifies only the exact upstream hostname-default
 line in its temporary download; if that line changes upstream, the helper stops
 instead of guessing. The original hostname prompt remains interactive and now
 defaults to `mesh-radio-manager`, so you may enter a different name. It verifies
-PVE 8.4+, a Debian 13+ privileged openHop LXC, architecture, and USB passthrough
-before changing the LXC. It tags successful containers `mesh-radio-manager`.
+PVE 8.4+, a Debian 13+ official openHop LXC, and architecture before changing
+the LXC. The default mode preserves upstream's privileged USB compatibility;
+the fresh `--unprivileged` mode uses the device-scoped flow below instead. It
+tags successful containers `mesh-radio-manager`.
 The default profile uses Meshtastic alpha; use
 `--advanced` to choose the Meshtastic add-on/channel interactively, or use
 explicit flags with `--unattended` for automation. A published release bundle
@@ -70,6 +72,31 @@ also contains `apt-source.env`; after you verify the bundle attestation, the
 helper automatically pins the signed GitHub Pages APT repository. Future
 `mesh-radio manager update` calls then download the Debian package from that
 repository rather than from a mutable script.
+
+### Fresh unprivileged LXC (recommended)
+
+For a new installation, add `--unprivileged`. This is a fresh-create mode only:
+it cannot be combined with `--ctid`, does not convert an existing container,
+and deliberately removes the upstream installer's broad USB compatibility
+block before it runs.
+
+```bash
+./scripts/proxmox-install.sh \
+  --manager-package ./mesh-radio-manager_0.1.6-1_all.deb \
+  --channel alpha --unprivileged
+```
+
+Before creating the CT, the installer presents the host CH341 inventory and you
+select one radio for openHop and one for MeshtasticD. It then bootstraps only
+those two devices, passes the selected identities to `mesh-radio assign` inside
+the CT with the PineDio/MeshTadpole profiles, verifies them, and finalizes the
+device grants. To preselect instead of using the menu, pass both
+`--openhop-selector` and `--meshtastic-selector`. Add
+`--manual-radio-configuration` to stop after bootstrap and configure the CT
+yourself. The flow maps the container's `plugdev` GID through its actual
+`/proc/1/gid_map`, grants only the two selected USB character devices with PVE
+`devN`, and gives no world-writable CH341 host rule. It fails rather than
+guessing if the container’s user/group mapping changes.
 
 ### Proxmox-style operator helpers
 
@@ -93,6 +120,67 @@ restores the exact pre-update snapshot if an update fails. Use
 `mesh-radio-pve --all --dry-run` to inspect candidates without changing them,
 and `mesh-radio-pve --doctor` after removing LXCs. Once no manager-tagged LXC
 remains, `mesh-radio-pve --prune --yes` removes the no-longer-needed host helper.
+
+### Device-scoped USB access
+
+The default upstream openHop installer initially uses a compatibility USBFS bind
+mount, `c 189:*`, and a broad CH341 udev rule. That makes first setup reliable,
+but a privileged LXC could open other USBFS character devices. The fresh
+`--unprivileged` mode never adds those rules. The fresh installer does this
+selection/bootstrap/assignment/finalization automatically. The host commands
+below remain available for a manual bootstrap or later inspection:
+
+```bash
+mesh-radio-pve --usb-devices
+
+# Copy the two selectors reported immediately above. Fresh unprivileged LXC:
+mesh-radio-pve --ctid 103 --bootstrap-usb \
+  --openhop-selector 'port:pci0000:00/0000:00:10.0/ports/2' \
+  --meshtastic-selector 'serial:12345678' --yes
+
+# Assign both radios inside the LXC, then finalize the same two selectors:
+mesh-radio-pve --ctid 103 --secure-usb \
+  --openhop-selector 'port:pci0000:00/0000:00:10.0/ports/2' \
+  --meshtastic-selector 'serial:12345678' --yes
+
+mesh-radio-pve --ctid 103 --usb-status
+```
+
+`--secure-usb` stops and starts the container. It creates host udev aliases
+matched by CH341 VID:PID, physical `ID_PATH`, and—where available—the USB
+serial. PVE `devN` entries then grant the container only those exact USBFS
+major/minor devices; the USBFS mount remains solely because both radio stacks
+use libusb. The physical path is checked even for a serial-numbered radio, so
+a duplicate serial on another port cannot silently take over. The helper only
+accepts safe metadata for udev rules, verifies the host/LXC `plugdev` GID
+mapping, and keeps the broad policy if its pre-hardening validation fails.
+For an unprivileged LXC, the host rule uses the shifted numeric GID that maps
+to its `plugdev` group; both radio services receive that group. It does not
+rely on host root being container root.
+
+USB bus and device numbers may change after a host reboot. They are deliberately
+not saved: PVE resolves the stable host aliases each time the LXC starts. If a
+radio is unplugged and reattached to the same physical port while its LXC is
+running, refresh its exact device grants:
+
+```bash
+mesh-radio-pve --ctid 103 --refresh-usb --yes
+```
+
+If a radio moves to a different port, validation fails closed. Run the same
+`--secure-usb` command again with the new selectors; it reconfigures the
+existing narrow grants and rolls back the udev identity if validation fails.
+`--refresh-usb` preserves a stopped container's state, so start it separately
+after a successful refresh when that is intentional. If an autostart races
+host udev settling after a reboot, it fails without a radio grant; wait for the
+aliases and start the LXC again rather than restoring the broad rule.
+
+An unprivileged deployment intentionally refuses to bootstrap while another
+`MODE="0666"` CH341 host rule exists. This prevents an older, privileged
+deployment from silently keeping all CH341 radios world-accessible. After that
+older CT is retired, remove its upstream CH341 rule (or finish its existing
+`--secure-usb` hardening) before creating the new CT; no existing CT is
+converted by this project.
 
 ### Manual LXC installer
 
@@ -247,8 +335,9 @@ contract, disable the drop-in and update this manager before continuing.
 
 The meshtasticd drop-in starts a manager wrapper in a private mount namespace.
 The wrapper validates exclusive assignment, generates manager-owned effective
-YAML, and exposes only the assigned USBFS node when a serial selector cannot
-be passed to meshtasticd. This is intentionally not based on startup order.
+YAML, and always isolates its mount namespace to the assigned USBFS node—even
+when it also passes MeshtasticD an upstream USB serial selector. This is
+intentionally not based on startup order.
 
 Meshtastic hardware fields are limited to profiles verified against current
 upstream Meshtastic configuration sources. Generic CH341/SX1262 needs explicit

@@ -10,6 +10,8 @@ DEFAULT_CHANNEL="alpha"
 MANAGER_TAG="mesh-radio-manager"
 OPENHOP_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="openhop-repeater"'
 MANAGER_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="mesh-radio-manager"'
+OPENHOP_PRIVILEGED_LINE='  --unprivileged 0 \'
+OPENHOP_UNPRIVILEGED_LINE='  --unprivileged 1 \'
 script_dir=$(
   CDPATH=''
   cd -- "$(dirname -- "$0")"
@@ -46,6 +48,15 @@ Options:
   --channel alpha|beta    Meshtastic repository channel (default: alpha).
   --no-meshtastic         Do not install MeshtasticD.
   --advanced              Choose manager add-ons interactively.
+  --unprivileged          Create a fresh unprivileged LXC with device-scoped
+                          USB access. Cannot be used with --ctid.
+  --openhop-selector SEL  Preselect the host radio for openHop. Fresh
+                          --unprivileged installs otherwise present a menu.
+  --meshtastic-selector SEL
+                          Preselect the host radio for MeshtasticD.
+  --manual-radio-configuration
+                          Bootstrap selected radios but do not create CT
+                          assignments or finalize services automatically.
   --unattended            Require --ctid and never prompt.
 EOF
 }
@@ -57,6 +68,10 @@ manager_package=""
 apt_source_manifest=""
 unattended=0
 advanced=0
+unprivileged=0
+openhop_selector=""
+meshtastic_selector=""
+manual_radio_configuration=0
 while (($#)); do
   case "$1" in
     --ctid)
@@ -83,6 +98,18 @@ while (($#)); do
       ;;
     --no-meshtastic) install_meshtastic=0 ;;
     --advanced) advanced=1 ;;
+    --unprivileged) unprivileged=1 ;;
+    --openhop-selector)
+      shift
+      [[ $# -gt 0 ]] || { msg_error "--openhop-selector needs a selector"; exit 2; }
+      openhop_selector=$1
+      ;;
+    --meshtastic-selector)
+      shift
+      [[ $# -gt 0 ]] || { msg_error "--meshtastic-selector needs a selector"; exit 2; }
+      meshtastic_selector=$1
+      ;;
+    --manual-radio-configuration) manual_radio_configuration=1 ;;
     --unattended) unattended=1 ;;
     -h|--help) usage; exit 0 ;;
     *) msg_error "Unknown option: $1"; usage; exit 2 ;;
@@ -110,6 +137,22 @@ if [[ -n "$apt_source_manifest" && ! -r "$apt_source_manifest" ]]; then
 fi
 if ((unattended)) && [[ -z "$ctid" ]]; then
   msg_error "--unattended requires --ctid because the official openHop installer is interactive"
+  exit 2
+fi
+if ((unprivileged)) && [[ -n "$ctid" ]]; then
+  msg_error "--unprivileged creates a fresh LXC only; it never converts an existing container"
+  exit 2
+fi
+if [[ -n "$openhop_selector$meshtastic_selector" ]] && [[ -z "$openhop_selector" || -z "$meshtastic_selector" ]]; then
+  msg_error "--openhop-selector and --meshtastic-selector must be used together"
+  exit 2
+fi
+if [[ -n "$openhop_selector$meshtastic_selector" ]] && (( ! unprivileged )); then
+  msg_error "Radio selectors are only used by the fresh --unprivileged flow"
+  exit 2
+fi
+if ((manual_radio_configuration && ! unprivileged)); then
+  msg_error "--manual-radio-configuration is only used by the fresh --unprivileged flow"
   exit 2
 fi
 if ((advanced && unattended)); then
@@ -148,6 +191,25 @@ if ((advanced)); then
       esac
     done
   fi
+fi
+
+if ((unprivileged && ! install_meshtastic)); then
+  msg_error "The fresh --unprivileged radio handoff requires MeshtasticD; omit --no-meshtastic."
+  exit 2
+fi
+
+preflight_unprivileged_host() {
+  [[ -f "$script_dir/proxmox-usb.sh" ]] || {
+    msg_error "The release bundle lacks proxmox-usb.sh required for unprivileged USB setup."
+    exit 1
+  }
+  # This executes no LXC operation. It rejects an old host-wide CH341 0666
+  # rule before the new CT is created, avoiding a partially created migration.
+  bash "$script_dir/proxmox-usb.sh" preflight
+}
+
+if ((unprivileged)); then
+  preflight_unprivileged_host
 fi
 
 validate_apt_source_manifest() {
@@ -232,6 +294,83 @@ ensure_manager_tag() {
   msg_ok "Tagged LXC ${ctid} with ${MANAGER_TAG}"
 }
 
+select_host_radio() {
+  local role=$1 excluded_selector=${2:-} listing line selector choice
+  local -a selectors=() rows=()
+  listing=$(bash "$script_dir/proxmox-usb.sh" list) || {
+    msg_error "Could not enumerate CH341 radios on the Proxmox host."
+    return 1
+  }
+  while IFS= read -r line; do
+    [[ "$line" == SELECTOR* ]] && continue
+    selector=${line%%[[:space:]]*}
+    [[ "$selector" == serial:* || "$selector" == port:* ]] || continue
+    [[ "$selector" != "$excluded_selector" ]] || continue
+    selectors+=("$selector")
+    rows+=("$line")
+  done <<<"$listing"
+  ((${#selectors[@]} > 0)) || {
+    msg_error "No unused CH341 radio is available for ${role}."
+    return 1
+  }
+  printf '\nSelect the %s radio from this Proxmox-host inventory:\n' "$role" >&2
+  for ((choice = 0; choice < ${#selectors[@]}; choice++)); do
+    printf '  %d) %s\n' "$((choice + 1))" "${rows[choice]}" >&2
+  done
+  while :; do
+    printf ' %s choice [1-%d]: ' "$role" "${#selectors[@]}" >&2
+    read -r choice
+    [[ "$choice" =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#selectors[@]})) && {
+      printf '%s\n' "${selectors[choice - 1]}"
+      return 0
+    }
+    msg_warn "Choose a number from 1 to ${#selectors[@]}."
+  done
+}
+
+host_selector_exists() {
+  local expected=$1 listing line selector matches=0
+  listing=$(bash "$script_dir/proxmox-usb.sh" list) || return 1
+  while IFS= read -r line; do
+    selector=${line%%[[:space:]]*}
+    [[ "$selector" == "$expected" ]] && matches=$((matches + 1))
+  done <<<"$listing"
+  [[ "$matches" == 1 ]]
+}
+
+choose_unprivileged_radios() {
+  if [[ -z "$openhop_selector" ]]; then
+    openhop_selector=$(select_host_radio openHop) || return 1
+    meshtastic_selector=$(select_host_radio MeshtasticD "$openhop_selector") || return 1
+  else
+    host_selector_exists "$openhop_selector" || {
+      msg_error "Requested openHop selector is not currently a unique listed host radio: $openhop_selector"
+      return 1
+    }
+    host_selector_exists "$meshtastic_selector" || {
+      msg_error "Requested MeshtasticD selector is not currently a unique listed host radio: $meshtastic_selector"
+      return 1
+    }
+  fi
+  [[ "$openhop_selector" != "$meshtastic_selector" ]] || {
+    msg_error "openHop and MeshtasticD must use different radios."
+    return 1
+  }
+  msg_info "Selected openHop=${openhop_selector}; MeshtasticD=${meshtastic_selector}"
+}
+
+configure_selected_radios_in_lxc() {
+  msg_info "Passing selected host identities to the Mesh Radio Manager in LXC ${ctid}"
+  # Assignments are performed only after bootstrap grants exactly these two
+  # devices. The manager independently resolves each selector in the CT and
+  # fails instead of translating a topology path heuristically.
+  pct exec "$ctid" -- sh -ec 'systemctl stop openhop-repeater meshtasticd 2>/dev/null || true'
+  pct exec "$ctid" -- /usr/bin/mesh-radio assign openhop "$openhop_selector" --profile pinedio
+  pct exec "$ctid" -- /usr/bin/mesh-radio assign meshtastic "$meshtastic_selector" --profile meshtadpole
+  pct exec "$ctid" -- /usr/bin/mesh-radio verify >/dev/null
+  msg_ok "Selected radios were assigned and verified inside LXC ${ctid}"
+}
+
 host_quirks_changed=0
 ensure_host_ch341_quirks() {
   local config_file="/etc/pve/lxc/${ctid}.conf"
@@ -242,9 +381,8 @@ ensure_host_ch341_quirks() {
 
   [[ -f "$config_file" ]] || { msg_error "Missing Proxmox LXC configuration: $config_file"; exit 1; }
   if grep -Eq '^unprivileged:[[:space:]]*1' "$config_file"; then
-    msg_error "LXC ${ctid} is unprivileged. The official openHop USB setup requires a privileged LXC."
-    msg_error "Create it with the official installer instead of converting an existing LXC in place."
-    exit 1
+    msg_ok "Unprivileged LXC detected: broad USB compatibility rules are intentionally not installed"
+    return
   fi
 
   # These are the exact USB lines used by the official openHop Proxmox
@@ -280,6 +418,59 @@ ensure_host_ch341_quirks() {
   msg_ok "Verified official CH341 host passthrough quirks"
 }
 
+patch_upstream_for_unprivileged_lxc() {
+  local temporary mode_count usb_start_count container_start_count
+  mode_count=$(grep -Fxc "$OPENHOP_PRIVILEGED_LINE" "$openhop_script" || true)
+  if [[ "$mode_count" != 1 ]]; then
+    msg_error "The official openHop installer no longer has the expected privileged-LXC creation line."
+    msg_error "Refusing to guess at an unprivileged conversion."
+    exit 1
+  fi
+  usb_start_count=$(grep -Fxc '# ── USB passthrough' "$openhop_script" || true)
+  container_start_count=$(grep -Fxc '# ── Start container' "$openhop_script" || true)
+  if [[ "$usb_start_count" != 1 || "$container_start_count" != 1 ]]; then
+    msg_error "The official openHop installer USB section no longer has the expected boundaries."
+    msg_error "Refusing to guess at an unprivileged USB policy."
+    exit 1
+  fi
+  temporary=$(mktemp "${openhop_script}.unprivileged.XXXXXX")
+  if ! awk -v expected="$OPENHOP_PRIVILEGED_LINE" -v replacement="$OPENHOP_UNPRIVILEGED_LINE" '
+    $0 == expected { print replacement; replacements += 1; next }
+    { print }
+    END { exit replacements != 1 }
+  ' "$openhop_script" >"$temporary"; then
+    rm -f -- "$temporary"
+    msg_error "Could not set unprivileged LXC mode in the official installer."
+    exit 1
+  fi
+  mv -f -- "$temporary" "$openhop_script"
+  # The upstream script's USBFS wildcard and MODE=0666 rule are valid only
+  # for its privileged mode. This fresh-install mode deletes that exact
+  # section before it executes, then Mesh Radio Manager provisions two narrow
+  # devN grants after the radios are assigned.
+  if ! awk '
+    /^# ── USB passthrough/ { if (inside) exit 1; inside = 1; starts += 1; next }
+    inside && /^# ── Start container/ { inside = 0; ends += 1 }
+    !inside { print }
+    END { exit starts != 1 || ends != 1 || inside }
+  ' "$openhop_script" >"$temporary"; then
+    rm -f -- "$temporary"
+    msg_error "Could not remove the official USB compatibility section."
+    exit 1
+  fi
+  mv -f -- "$temporary" "$openhop_script"
+  sed -i 's/Mode: privileged (required for USB passthrough)/Mode: unprivileged (device-scoped USB configured after assignment)/' "$openhop_script"
+  grep -Fqx "$OPENHOP_UNPRIVILEGED_LINE" "$openhop_script" || {
+    msg_error "Could not set unprivileged LXC mode in the official installer."
+    exit 1
+  }
+  if grep -Fq 'lxc.cgroup2.devices.allow: c 189:* rwm' "$openhop_script" ||
+    grep -Fq 'ATTR{idVendor}=="1a86", ATTR{idProduct}=="5512", MODE="0666"' "$openhop_script"; then
+    msg_error "The official installer USB compatibility block changed; refusing an incomplete unprivileged setup."
+    exit 1
+  fi
+}
+
 choose_ctid() {
   local -a created=()
   local candidate
@@ -301,6 +492,10 @@ choose_ctid() {
   done
 }
 
+if ((unprivileged)); then
+  choose_unprivileged_radios
+fi
+
 if [[ -z "$ctid" ]]; then
   header_before="$(list_ctids)"
   echo -e "${BLD}Mesh Radio Manager — Proxmox host installer${CL}"
@@ -320,6 +515,10 @@ if [[ -z "$ctid" ]]; then
   if ! grep -Fqx "$MANAGER_DEFAULT_HOSTNAME_LINE" "$openhop_script"; then
     msg_error "Could not set the Mesh Radio Manager hostname default in the official installer."
     exit 1
+  fi
+  if ((unprivileged)); then
+    patch_upstream_for_unprivileged_lxc
+    msg_info "The fresh LXC will be unprivileged. USB is added only later as two device-scoped grants."
   fi
   msg_info "The upstream hostname prompt now defaults to mesh-radio-manager; you may enter another name."
   bash "$openhop_script"
@@ -365,11 +564,38 @@ pct exec "$ctid" -- /usr/bin/mesh-radio --version >/dev/null
 ensure_manager_tag
 
 msg_info "Installing Proxmox-host control panel"
-if [[ -f "$script_dir/proxmox-manage.sh" ]]; then
+if [[ -f "$script_dir/proxmox-manage.sh" && -f "$script_dir/proxmox-usb.sh" ]]; then
+  install -d -m 0755 /usr/local/lib/mesh-radio-manager
+  install -m 0755 "$script_dir/proxmox-usb.sh" /usr/local/lib/mesh-radio-manager/proxmox-usb.sh
   install -m 0755 "$script_dir/proxmox-manage.sh" /usr/local/sbin/mesh-radio-pve
   msg_ok "Host panel installed: mesh-radio-pve --ctid ${ctid}"
 else
-  msg_warn "LXC installation succeeded, but the release bundle lacks proxmox-manage.sh"
+  msg_warn "LXC installation succeeded, but the release bundle lacks a Proxmox host helper"
+  if ((unprivileged)); then
+    msg_error "Cannot continue an unprivileged install without the bundled host helper."
+    exit 1
+  fi
+fi
+
+if ((unprivileged)); then
+  msg_info "Bootstrapping exactly the selected USB radios into unprivileged LXC ${ctid}"
+  /usr/local/sbin/mesh-radio-pve --ctid "$ctid" --bootstrap-usb \
+    --openhop-selector "$openhop_selector" --meshtastic-selector "$meshtastic_selector" --yes
+  if ((manual_radio_configuration)); then
+    msg_warn "Radio handoff is bootstrapped only; assignments and final validation were left for manual configuration."
+  else
+    if ! configure_selected_radios_in_lxc; then
+      msg_error "Automatic CT assignment failed. The CT retains only bootstrap access to the two selected radios."
+      msg_error "Inspect 'mesh-radio radios' in CT ${ctid}, assign manually, then run mesh-radio-pve --secure-usb with the selected selectors."
+      exit 1
+    fi
+    msg_info "Finalizing device-scoped USB access and restarting LXC ${ctid}"
+    if ! /usr/local/sbin/mesh-radio-pve --ctid "$ctid" --secure-usb \
+      --openhop-selector "$openhop_selector" --meshtastic-selector "$meshtastic_selector" --yes; then
+      msg_error "Automatic finalization failed; the CT remains in its previously recorded bootstrap state."
+      exit 1
+    fi
+  fi
 fi
 
 ip_address="$(pct exec "$ctid" -- hostname -I 2>/dev/null | awk '{print $1}')"
@@ -378,15 +604,30 @@ msg_ok "Mesh Radio Manager installation complete"
 echo -e " Container: ${GN}${ctid}${CL}"
 echo -e " openHop UI: ${GN}http://${ip_address:-<LXC-IP>}:8000${CL}"
 echo
-echo "Next: the official openHop installer has already configured USB bus passthrough."
-echo "Inspect the two radios, then assign them inside the LXC:"
-echo "  pct enter ${ctid}"
-echo "  systemctl stop openhop-repeater meshtasticd 2>/dev/null || true"
-echo "  mesh-radio radios"
-echo "  mesh-radio assign openhop <selector> --profile pinedio"
-echo "  mesh-radio assign meshtastic <selector> --profile meshtadpole"
-echo "  mesh-radio verify"
-echo "  systemctl start meshtasticd && systemctl restart openhop-repeater"
+if ((unprivileged)); then
+  if ((manual_radio_configuration)); then
+    echo "The selected radios have bootstrap-only access. Configure manually inside the LXC, then finalize from PVE:"
+    echo "  mesh-radio-pve --ctid ${ctid} --secure-usb --openhop-selector '${openhop_selector}' --meshtastic-selector '${meshtastic_selector}' --yes"
+  else
+    echo "The selected radios were assigned and finalized with device-scoped USB access."
+    echo "Set your Meshtastic node region/settings, then enable or restart the radio services as desired."
+  fi
+else
+  echo "Next: the official openHop installer has already configured USB bus passthrough."
+  echo "Inspect the two radios, then assign them inside the LXC:"
+  echo "  pct enter ${ctid}"
+  echo "  systemctl stop openhop-repeater meshtasticd 2>/dev/null || true"
+  echo "  mesh-radio radios"
+  echo "  mesh-radio assign openhop <selector> --profile pinedio"
+  echo "  mesh-radio assign meshtastic <selector> --profile meshtadpole"
+  echo "  mesh-radio verify"
+  echo "  systemctl start meshtasticd && systemctl restart openhop-repeater"
+  echo
+  echo "Then return to the Proxmox host and replace broad USB compatibility access:"
+  echo "  mesh-radio-pve --usb-devices"
+  echo "  mesh-radio-pve --ctid ${ctid} --secure-usb --openhop-selector '<port:...>' --meshtastic-selector '<serial:...>' --yes"
+  echo "This retains USBFS visibility for libusb but permits only the assigned radios."
+fi
 echo
 echo "Later, update all three components from inside the LXC with: mesh-radio update"
 echo "Or open the Proxmox-host control panel: mesh-radio-pve --ctid ${ctid}"

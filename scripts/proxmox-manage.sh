@@ -8,6 +8,7 @@ set -Eeuo pipefail
 MANAGER_TAG="mesh-radio-manager"
 HOST_LOCK_DIR=/run/mesh-radio-manager
 HOST_LOCK_FILE="$HOST_LOCK_DIR/proxmox-host-lifecycle.lock"
+USB_HELPER=${MESH_RADIO_PVE_USB_HELPER:-/usr/local/lib/mesh-radio-manager/proxmox-usb.sh}
 # An intentional, documented non-error result for a template.  Do not report a
 # template as updated: Proxmox templates are not runnable containers.
 SKIPPED_EXIT=75
@@ -30,12 +31,24 @@ Usage:
   mesh-radio-pve --ctid CTID --update --yes [--backup --backup-storage STORAGE]
   mesh-radio-pve --all --update --yes [--backup --backup-storage STORAGE] [--continue-on-error]
   mesh-radio-pve (--ctid CTID | --all) --dry-run
+  mesh-radio-pve --usb-devices
+  mesh-radio-pve --ctid CTID --usb-status
+  mesh-radio-pve --ctid CTID --secure-usb --openhop-selector SELECTOR \
+    --meshtastic-selector SELECTOR --yes
+  mesh-radio-pve --ctid CTID --bootstrap-usb --openhop-selector SELECTOR \
+    --meshtastic-selector SELECTOR --yes
+  mesh-radio-pve --ctid CTID --refresh-usb --yes
   mesh-radio-pve --doctor
   mesh-radio-pve --prune --yes
 
 Only LXCs tagged mesh-radio-manager are selected. --backup takes a Proxmox
 snapshot before each update and restores that exact backup if its update fails.
 --yes is required for noninteractive updates. --dry-run never changes a CT.
+`--secure-usb` restarts one CT and changes its USB permission boundary. Use
+`--usb-devices` first; selectors come from the Proxmox host, never from LXC
+state. `--bootstrap-usb` is only for a fresh unprivileged CT before its first
+assignments. `--refresh-usb` is the fail-closed recovery operation after a
+hotplug.
 EOF
 }
 
@@ -52,6 +65,13 @@ continue_on_error=0
 dry_run=0
 doctor_requested=0
 prune_requested=0
+usb_devices_requested=0
+usb_status_requested=0
+secure_usb_requested=0
+refresh_usb_requested=0
+bootstrap_usb_requested=0
+openhop_selector=""
+meshtastic_selector=""
 while (($#)); do
   case "$1" in
     --ctid)
@@ -70,6 +90,21 @@ while (($#)); do
       ;;
     --continue-on-error) continue_on_error=1 ;;
     --dry-run) dry_run=1 ;;
+    --usb-devices) usb_devices_requested=1 ;;
+    --usb-status) usb_status_requested=1 ;;
+    --secure-usb) secure_usb_requested=1 ;;
+    --refresh-usb) refresh_usb_requested=1 ;;
+    --bootstrap-usb) bootstrap_usb_requested=1 ;;
+    --openhop-selector)
+      shift
+      [[ $# -gt 0 ]] || { usage >&2; exit 2; }
+      openhop_selector=$1
+      ;;
+    --meshtastic-selector)
+      shift
+      [[ $# -gt 0 ]] || { usage >&2; exit 2; }
+      meshtastic_selector=$1
+      ;;
     --doctor) doctor_requested=1 ;;
     --prune) prune_requested=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -78,7 +113,41 @@ while (($#)); do
   shift
 done
 
-if ((doctor_requested || prune_requested)); then
+usb_action_count=$((usb_devices_requested + usb_status_requested + secure_usb_requested + refresh_usb_requested + bootstrap_usb_requested))
+if ((usb_action_count > 0)); then
+  if ((usb_action_count != 1)); then
+    msg_error "Choose only one USB action."
+    exit 2
+  fi
+  if ((doctor_requested || prune_requested || update_requested || update_all || backup_requested || dry_run || continue_on_error)); then
+    msg_error "USB actions cannot be combined with update, dry-run, doctor, or prune options."
+    exit 2
+  fi
+  if ((usb_devices_requested)); then
+    [[ -z "$ctid$openhop_selector$meshtastic_selector" && $assume_yes -eq 0 ]] || {
+      msg_error "--usb-devices does not accept CT, selector, or --yes options."
+      exit 2
+    }
+  else
+    [[ -n "$ctid" ]] || { msg_error "USB actions require --ctid."; exit 2; }
+    if ((secure_usb_requested || bootstrap_usb_requested)); then
+      [[ -n "$openhop_selector" && -n "$meshtastic_selector" && $assume_yes -eq 1 ]] || {
+        msg_error "--secure-usb and --bootstrap-usb require both selectors and --yes."
+        exit 2
+      }
+    elif ((refresh_usb_requested)); then
+      [[ -z "$openhop_selector$meshtastic_selector" && $assume_yes -eq 1 ]] || {
+        msg_error "--refresh-usb accepts no selectors and requires --yes."
+        exit 2
+      }
+    else
+      [[ -z "$openhop_selector$meshtastic_selector" && $assume_yes -eq 0 ]] || {
+        msg_error "--usb-status accepts no selectors or --yes."
+        exit 2
+      }
+    fi
+  fi
+elif ((doctor_requested || prune_requested)); then
   if [[ -n "$ctid" || $update_all -eq 1 || $update_requested -eq 1 || $backup_requested -eq 1 || $dry_run -eq 1 || $continue_on_error -eq 1 ]]; then
     msg_error "--doctor and --prune cannot be combined with CT update options."
     exit 2
@@ -507,6 +576,52 @@ prune() {
   msg_ok "Removed unused host helper: ${helper_path}"
 }
 
+run_usb_helper() {
+  local action=$1
+  [[ -x "$USB_HELPER" ]] || {
+    msg_error "USB helper is missing: $USB_HELPER. Re-run the current Proxmox release installer for this LXC."
+    return 1
+  }
+  case "$action" in
+    list) "$USB_HELPER" list ;;
+    status) "$USB_HELPER" status --ctid "$ctid" ;;
+    secure)
+      "$USB_HELPER" secure --ctid "$ctid" --openhop-selector "$openhop_selector" \
+        --meshtastic-selector "$meshtastic_selector" --yes
+      ;;
+    bootstrap)
+      "$USB_HELPER" bootstrap --ctid "$ctid" --openhop-selector "$openhop_selector" \
+        --meshtastic-selector "$meshtastic_selector" --yes
+      ;;
+    refresh) "$USB_HELPER" refresh --ctid "$ctid" --yes ;;
+    *) return 2 ;;
+  esac
+}
+
+if ((usb_devices_requested)); then
+  run_usb_helper list
+  exit $?
+fi
+if ((usb_status_requested || secure_usb_requested || refresh_usb_requested || bootstrap_usb_requested)); then
+  ct_is_managed "$ctid" || {
+    msg_error "LXC $ctid is not tagged ${MANAGER_TAG}; use the managed installer first."
+    exit 2
+  }
+  if ((usb_status_requested)); then
+    run_usb_helper status
+  else
+    acquire_host_lock || exit 1
+    if ((secure_usb_requested)); then
+      run_usb_helper secure
+    elif ((bootstrap_usb_requested)); then
+      run_usb_helper bootstrap
+    else
+      run_usb_helper refresh
+    fi
+  fi
+  exit $?
+fi
+
 if ((doctor_requested)); then
   doctor
   exit $?
@@ -561,6 +676,7 @@ while :; do
   echo "  6) Restart radio services"
   echo "  7) Update everything"
   echo "  8) Enter LXC shell"
+  echo "  9) USB handoff status"
   echo "  0) Exit"
   read -r -p " Select: " choice
   case "$choice" in
@@ -597,6 +713,7 @@ while :; do
       fi
       ;;
     8) pct enter "$ctid" ;;
+    9) run_usb_helper status ;;
     0) exit 0 ;;
     *) msg_error "Unknown selection" ;;
   esac

@@ -26,7 +26,7 @@ jobs:
           PYTHONPATH=src python -m unittest discover -s tests -v
           PYTHONPATH=src python -m compileall -q src
           sh -n install.sh manager-update.sh update.sh uninstall.sh
-          bash -n scripts/proxmox-install.sh scripts/proxmox-manage.sh scripts/mesh-radio-menu
+          bash -n scripts/proxmox-install.sh scripts/proxmox-manage.sh scripts/proxmox-usb.sh scripts/mesh-radio-menu
           shellcheck install.sh manager-update.sh update.sh uninstall.sh scripts/*.sh debian/mesh-radio-manager.postinst debian/mesh-radio-manager.prerm debian/tests/smoke
       - name: Build Debian package
         run: |

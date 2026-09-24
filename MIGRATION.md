@@ -22,3 +22,29 @@ Migration plan:
 3. Assign one radio to each service and validate before either daemon starts.
 4. Use upstream's openHop updater normally; `mesh-radio verify` reports a dirty
    upstream checkout rather than attempting to repair it.
+
+## Privileged-to-unprivileged deployment transition
+
+This project intentionally does **not** convert an existing privileged CT. A
+privilege conversion changes user-namespace ownership semantics and USB access
+at the same time, which is not safe to automate around a live radio service.
+The supported transition is a fresh deployment:
+
+1. Retire the prior CT only when its configuration and backups are no longer
+   needed. Its host-wide CH341 `MODE="0666"` rule must also be removed, or its
+   existing device-scoped hardening completed, before the new deployment can
+   bootstrap.
+2. Create a new CT with `scripts/proxmox-install.sh --unprivileged`. The
+   temporary upstream installer copy is checked against exact creation and USB
+   section markers before its privileged USB policy is removed.
+3. Select the two radios in the installer's host-side menu. The installer
+   bootstraps them, passes the two selectors into `mesh-radio assign` inside
+   the new CT, verifies them, and finalizes the grants. It maps the new CT's
+   `plugdev` GID through its live GID map at both stages.
+4. Use `--manual-radio-configuration` only when you want the installer to stop
+   after the narrow bootstrap grant; then assign inside the CT and run
+   `mesh-radio-pve --secure-usb` with the displayed selectors yourself.
+
+If any identity, user/group map, or permission validation fails, the new CT
+remains unprivileged and the helper fails closed. Existing CT state is neither
+edited nor used as input to the new deployment.

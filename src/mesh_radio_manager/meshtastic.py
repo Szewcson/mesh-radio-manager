@@ -320,9 +320,9 @@ def isolate_assigned_usb(device_node: Path, root: Path = DEV_USB_ROOT) -> None:
     """Expose exactly one USBFS device in the service's private mount namespace.
 
     This is called only by the root systemd wrapper with `PrivateMounts=yes`.
-    It does not alter the host mount namespace. A serial selector is still
-    supplied where Meshtastic supports it; isolation is the safe fallback for
-    a port-identified/singleton CH341 device.
+    It does not alter the host mount namespace. Meshtastic's USB serial is an
+    application selector, not an access-control boundary, so this is required
+    even when the assigned device has an iSerial.
     """
     if not device_node.is_char_device():
         raise ManagerError(f"Assigned USBFS node is unavailable: {device_node}")
@@ -346,8 +346,7 @@ def run_daemon(arguments: Sequence[str] = ()) -> int:
     config = prepare_runtime_config()
     data = load()
     device = validate(data, enumerate_devices(), require_present=True)["meshtastic"]
-    if not device.serial:
-        isolate_assigned_usb(device.device_node)
+    isolate_assigned_usb(device.device_node)
     command = [str(MESHTASTIC_BINARY), "--config", str(config), "--fsdir", str(MESHTASTIC_FS_DIR), *arguments]
     os.execv(command[0], command)
     return 127

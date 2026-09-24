@@ -94,6 +94,10 @@ class AssignmentTests(unittest.TestCase):
         self.assertEqual(config["Lora"]["IRQ"], 6)
         self.assertTrue(config["Lora"]["DIO2_AS_RF_SWITCH"])
 
+    def test_meshtastic_rejects_serial_that_upstream_would_truncate(self) -> None:
+        with self.assertRaisesRegex(ManagerError, "1 to 8 ASCII bytes"):
+            effective_meshtastic_config({"profile": "meshtadpole"}, radio(serial="123456789"))
+
 
 if __name__ == "__main__":
     unittest.main()

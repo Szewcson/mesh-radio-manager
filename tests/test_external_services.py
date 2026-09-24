@@ -11,13 +11,14 @@ from unittest.mock import patch
 import yaml
 
 from mesh_radio_manager.errors import ManagerError
-from mesh_radio_manager.integration import OPENHOP_DROPIN_TEXT, upstream_unit_supported
+from mesh_radio_manager.integration import MESHTASTIC_DROPIN_TEXT, OPENHOP_DROPIN_TEXT, upstream_unit_supported
 from mesh_radio_manager.meshtastic import (
     MESHTASTIC_WEB_UI_DEFAULT_PORT,
     apply_web_ui_settings,
     backup_config,
     installed as meshtastic_installed,
     restore_config,
+    run_daemon,
     validate_web_ui_enable,
     web_ui_settings,
 )
@@ -131,6 +132,18 @@ class ExternalServiceTests(unittest.TestCase):
         self.assertEqual(selected, {"enabled": True, "port": 9443})
         self.assertTrue(save_config.called)
 
+    def test_meshtastic_daemon_isolates_even_a_serial_selected_radio(self) -> None:
+        device = UsbDevice(0x1A86, 0x5512, 3, 4, "3-2", "pci/ports/2", "12345678")
+        with patch("mesh_radio_manager.meshtastic.os.geteuid", return_value=0), patch(
+            "mesh_radio_manager.meshtastic.prepare_runtime_config", return_value=Path("/run/config.yaml")
+        ), patch("mesh_radio_manager.meshtastic.load", return_value={}), patch(
+            "mesh_radio_manager.meshtastic.enumerate_devices", return_value=[device]
+        ), patch("mesh_radio_manager.meshtastic.validate", return_value={"meshtastic": device}), patch(
+            "mesh_radio_manager.meshtastic.isolate_assigned_usb"
+        ) as isolate, patch("mesh_radio_manager.meshtastic.os.execv"):
+            self.assertEqual(run_daemon(), 127)
+        isolate.assert_called_once_with(device.device_node)
+
     def test_backup_restore(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -148,6 +161,7 @@ class ExternalServiceTests(unittest.TestCase):
         self.assertIn("ExecStartPre=+/usr/local/bin/mesh-radio internal prepare-openhop", OPENHOP_DROPIN_TEXT)
         self.assertNotIn("ExecStart=", OPENHOP_DROPIN_TEXT)
         self.assertNotIn("/run/mesh-radio-manager/openhop-config.yaml", OPENHOP_DROPIN_TEXT)
+        self.assertIn("SupplementaryGroups=plugdev", MESHTASTIC_DROPIN_TEXT)
         success = subprocess.CompletedProcess([], 0, "", "")
         with patch("mesh_radio_manager.services._run", return_value=success):
             action("openhop-repeater.service", "start")

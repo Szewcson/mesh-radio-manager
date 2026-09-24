@@ -30,6 +30,9 @@ MESHTASTIC_DROPIN_TEXT = """# Managed by Mesh Radio Manager. USB isolation happe
 [Service]
 User=root
 Group=root
+# The host USB node is group-owned by the container's plugdev GID.  This is
+# also required in an unprivileged LXC, where root does not map to host root.
+SupplementaryGroups=plugdev
 PrivateMounts=yes
 NoNewPrivileges=no
 ExecStart=

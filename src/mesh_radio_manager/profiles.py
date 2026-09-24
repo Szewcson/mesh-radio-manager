@@ -39,6 +39,12 @@ MESHTASTIC_PROFILES: dict[str, dict[str, Any]] = {
     },
 }
 
+# ``libpinedio-usb`` stores the CH341 iSerial in ``char[9]`` (eight bytes plus
+# NUL).  Its native backend silently truncates a longer value, which could turn
+# two distinct radios into the same selector.  Rejecting it is safer than
+# configuring a selector that cannot be exact.
+MESHTASTIC_USB_SERIAL_MAX_BYTES = 8
+
 
 def _merge(destination: dict[str, Any], source: Mapping[str, Any]) -> dict[str, Any]:
     for key, value in source.items():
@@ -72,6 +78,15 @@ def effective_meshtastic_config(assignment: Mapping[str, Any], device: UsbDevice
     lora["USB_VID"] = device.vid
     lora["USB_PID"] = device.pid
     if device.serial:
+        try:
+            serial_bytes = device.serial.encode("ascii")
+        except UnicodeEncodeError as error:
+            raise ManagerError("Meshtastic CH341 USB serial must contain only ASCII characters") from error
+        if not 1 <= len(serial_bytes) <= MESHTASTIC_USB_SERIAL_MAX_BYTES or b"\0" in serial_bytes:
+            raise ManagerError(
+                "Meshtastic CH341 USB serial must be 1 to "
+                f"{MESHTASTIC_USB_SERIAL_MAX_BYTES} ASCII bytes; upstream would truncate a longer value"
+            )
         # Upstream Meshtastic's exact selector spelling.
         lora["USB_Serialnum"] = device.serial
     if advanced:

@@ -31,7 +31,7 @@ Use a versioned release bundle, not a mutable `main` branch script. Download
 the bundle and verify its GitHub build provenance before extracting it:
 
 ```bash
-VERSION=v0.1.5
+VERSION=v0.1.6
 curl --fail --location --proto '=https' --tlsv1.2 -O \
   "https://github.com/Szewcson/mesh-radio-manager/releases/download/${VERSION}/mesh-radio-manager-${VERSION}.tar.gz"
 gh attestation verify "mesh-radio-manager-${VERSION}.tar.gz" -R Szewcson/mesh-radio-manager
@@ -44,7 +44,7 @@ install the verified manager package bundled with that release:
 
 ```bash
 ./scripts/proxmox-install.sh \
-  --manager-package ./mesh-radio-manager_0.1.5-1_all.deb \
+  --manager-package ./mesh-radio-manager_0.1.6-1_all.deb \
   --channel alpha
 ```
 
@@ -52,14 +52,18 @@ For an existing official openHop LXC, provide its CTID instead:
 
 ```bash
 ./scripts/proxmox-install.sh --ctid 103 \
-  --manager-package ./mesh-radio-manager_0.1.5-1_all.deb \
+  --manager-package ./mesh-radio-manager_0.1.6-1_all.deb \
   --channel alpha --unattended
 ```
 
-The helper reuses the official openHop installer without copying or modifying
-it. It verifies PVE 8.4+, a Debian 13+ privileged openHop LXC, architecture, and
-USB passthrough before changing the LXC. It tags successful containers
-`mesh-radio-manager`. The default profile uses Meshtastic alpha; use
+The helper reuses the official openHop installer without copying it into this
+project. For a new LXC it modifies only the exact upstream hostname-default
+line in its temporary download; if that line changes upstream, the helper stops
+instead of guessing. The original hostname prompt remains interactive and now
+defaults to `mesh-radio-manager`, so you may enter a different name. It verifies
+PVE 8.4+, a Debian 13+ privileged openHop LXC, architecture, and USB passthrough
+before changing the LXC. It tags successful containers `mesh-radio-manager`.
+The default profile uses Meshtastic alpha; use
 `--advanced` to choose the Meshtastic add-on/channel interactively, or use
 explicit flags with `--unattended` for automation. A published release bundle
 also contains `apt-source.env`; after you verify the bundle attestation, the
@@ -96,7 +100,7 @@ Create the LXC with the official openHop installer. Inside that LXC, install a
 verified release package:
 
 ```bash
-sudo apt-get install ./mesh-radio-manager_0.1.5-1_all.deb
+sudo apt-get install ./mesh-radio-manager_0.1.6-1_all.deb
 ```
 
 The package preserves `/etc/openhop_repeater/config.yaml`, writes manager state
@@ -130,8 +134,8 @@ This never changes RF region, power, or PSKs.
 ```bash
 sudo mesh-radio radios
 # Choose the displayed selector (USB serial is preferred).
-sudo mesh-radio assign openhop --device path:4-2 --profile pinedio
-sudo mesh-radio assign meshtastic --device serial:12345678 --profile meshtadpole
+sudo mesh-radio assign openhop path:4-2 --profile pinedio
+sudo mesh-radio assign meshtastic serial:12345678 --profile meshtadpole
 sudo mesh-radio verify
 sudo mesh-radio meshtastic configure
 sudo mesh-radio meshtastic restart

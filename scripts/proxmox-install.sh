@@ -8,6 +8,8 @@ set -Eeuo pipefail
 OPENHOP_INSTALLER="https://raw.githubusercontent.com/openhop-dev/openhop_repeater/main/scripts/proxmox-install.sh"
 DEFAULT_CHANNEL="alpha"
 MANAGER_TAG="mesh-radio-manager"
+OPENHOP_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="openhop-repeater"'
+MANAGER_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME="mesh-radio-manager"'
 script_dir=$(
   CDPATH=''
   cd -- "$(dirname -- "$0")"
@@ -308,6 +310,18 @@ if [[ -z "$ctid" ]]; then
   openhop_script=$(mktemp /tmp/openhop-proxmox-installer.XXXXXX)
   trap 'rm -f "$openhop_script"' EXIT HUP INT TERM
   curl --fail --location --proto '=https' --tlsv1.2 --output "$openhop_script" "$OPENHOP_INSTALLER"
+  upstream_hostname_defaults=$(grep -Fxc "$OPENHOP_DEFAULT_HOSTNAME_LINE" "$openhop_script" || true)
+  if [[ "$upstream_hostname_defaults" != "1" ]]; then
+    msg_error "The official openHop installer no longer has the expected hostname default."
+    msg_error "Refusing to modify its prompts; run it directly and choose the hostname yourself."
+    exit 1
+  fi
+  sed -i "s|^${OPENHOP_DEFAULT_HOSTNAME_LINE}$|${MANAGER_DEFAULT_HOSTNAME_LINE}|" "$openhop_script"
+  if ! grep -Fqx "$MANAGER_DEFAULT_HOSTNAME_LINE" "$openhop_script"; then
+    msg_error "Could not set the Mesh Radio Manager hostname default in the official installer."
+    exit 1
+  fi
+  msg_info "The upstream hostname prompt now defaults to mesh-radio-manager; you may enter another name."
   bash "$openhop_script"
   choose_ctid "$header_before"
 else

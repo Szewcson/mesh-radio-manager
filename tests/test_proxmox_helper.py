@@ -35,6 +35,10 @@ Description: Mesh Radio Manager signed package archive
     def test_host_helper_reuses_official_openhop_and_installs_verified_manager_package(self) -> None:
         script = (Path(__file__).parents[1] / "scripts/proxmox-install.sh").read_text(encoding="utf-8")
         self.assertIn("openhop-dev/openhop_repeater/main/scripts/proxmox-install.sh", script)
+        self.assertIn("MANAGER_DEFAULT_HOSTNAME_LINE='CT_HOSTNAME=\"mesh-radio-manager\"'", script)
+        self.assertIn('grep -Fxc "$OPENHOP_DEFAULT_HOSTNAME_LINE" "$openhop_script"', script)
+        self.assertIn('sed -i "s|^${OPENHOP_DEFAULT_HOSTNAME_LINE}$|${MANAGER_DEFAULT_HOSTNAME_LINE}|"', script)
+        self.assertIn("Refusing to modify its prompts", script)
         self.assertIn('pct exec "$ctid"', script)
         self.assertIn('pct push "$ctid" "$manager_package"', script)
         self.assertIn("--manager-package PATH", script)

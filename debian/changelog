@@ -1,3 +1,10 @@
+mesh-radio-manager (0.1.6-1) unstable; urgency=medium
+
+  * Default a newly-created Proxmox LXC hostname to mesh-radio-manager.
+  * Retain the upstream interactive hostname override.
+
+ -- Mesh Radio Manager contributors <noreply@invalid.example>  Wed, 24 Sep 2026 00:00:00 +0000
+
 mesh-radio-manager (0.1.5-1) unstable; urgency=medium
 
   * Publish release assets without a local Git checkout.

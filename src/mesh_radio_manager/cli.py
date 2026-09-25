@@ -15,6 +15,7 @@ from . import __version__
 from .assignments import assign, configuration_lock, load, save, set_meshtastic_channel, validate
 from .diagnostics import report
 from .errors import ManagerError
+from .integration import enable_meshtasticd
 from .integration import install as install_integration
 from .integration import uninstall as uninstall_integration
 from .meshtastic import (
@@ -204,10 +205,13 @@ def main(argv: list[str] | None = None) -> int:
                 value = state(OPENHOP_UNIT)
         elif args.command == "meshtastic":
             if args.meshtastic_command == "install":
-                # The package may enable a systemd service. Install the
-                # guarded unit before apt can ever expose it at boot.
-                install_integration(enable_web=False)
+                # A temporary runtime mask inside install_package prevents
+                # package hooks from starting an unassigned radio. Refresh
+                # the drop-in only after the vendor unit exists, then enable
+                # it for future boots without starting it now.
                 value = install_package(args.channel)
+                install_integration(enable_web=False)
+                enable_meshtasticd()
                 set_meshtastic_channel(args.channel)
             elif args.meshtastic_command == "status":
                 value = {"service": state(MESHTASTIC_UNIT), "packages": package_versions()}

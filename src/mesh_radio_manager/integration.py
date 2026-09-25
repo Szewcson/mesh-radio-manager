@@ -91,6 +91,7 @@ def _systemctl(*args: str, check: bool = True) -> str:
 
 
 def install(*, enable_web: bool = False) -> None:
+    """Install manager-owned integration files without changing Meshtastic state."""
     unit_text = _systemctl("cat", "openhop-repeater.service")
     if not upstream_unit_supported(unit_text):
         raise ManagerError(
@@ -102,9 +103,13 @@ def install(*, enable_web: bool = False) -> None:
     _atomic_write(WEB_UNIT, WEB_UNIT_TEXT)
     _atomic_write(TMPFILES, "d /run/mesh-radio-manager 0750 root root -\n")
     _systemctl("daemon-reload")
-    _systemctl("enable", "meshtasticd.service", check=False)
     if enable_web:
         _systemctl("enable", "--now", "mesh-radio-manager-web.service")
+
+
+def enable_meshtasticd() -> None:
+    """Enable MeshtasticD for future boots without starting it now."""
+    _systemctl("enable", "meshtasticd.service")
 
 
 def uninstall() -> None:

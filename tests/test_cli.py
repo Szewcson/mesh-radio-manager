@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,13 +26,33 @@ class CliTests(unittest.TestCase):
             result = main(["meshtastic", "configure", "--advanced-file", str(settings)])
             self.assertEqual(result, 2)
 
-    def test_package_install_installs_guard_first(self) -> None:
+    def test_package_install_enables_meshtastic_after_package_and_integration(self) -> None:
         calls: list[str] = []
-        with patch("mesh_radio_manager.cli.install_integration", side_effect=lambda **_: calls.append("guard")), patch(
-            "mesh_radio_manager.cli.install_package", side_effect=lambda channel: calls.append(channel) or {"installed": "x"}
+        with patch(
+            "mesh_radio_manager.cli.install_package", side_effect=lambda channel: calls.append(f"package:{channel}") or {"installed": "x"}
+        ), patch("mesh_radio_manager.cli.install_integration", side_effect=lambda **_: calls.append("integration")), patch(
+            "mesh_radio_manager.cli.enable_meshtasticd", side_effect=lambda: calls.append("enable")
         ), patch("mesh_radio_manager.cli.set_meshtastic_channel", side_effect=lambda channel: calls.append(f"stored:{channel}")):
             self.assertEqual(main(["meshtastic", "install", "--channel", "alpha"]), 0)
-        self.assertEqual(calls, ["guard", "alpha", "stored:alpha"])
+        self.assertEqual(calls, ["package:alpha", "integration", "enable", "stored:alpha"])
+
+    def test_package_install_reports_meshtastic_enable_failure(self) -> None:
+        calls: list[str] = []
+
+        def fail_enable() -> None:
+            calls.append("enable")
+            raise ManagerError("enable failed")
+
+        with patch(
+            "mesh_radio_manager.cli.install_package", side_effect=lambda channel: calls.append(f"package:{channel}") or {"installed": "x"}
+        ), patch("mesh_radio_manager.cli.install_integration", side_effect=lambda **_: calls.append("integration")), patch(
+            "mesh_radio_manager.cli.enable_meshtasticd",
+            side_effect=fail_enable,
+        ), patch("mesh_radio_manager.cli.set_meshtastic_channel", side_effect=lambda channel: calls.append(f"stored:{channel}")), patch(
+            "sys.stderr", new_callable=io.StringIO
+        ):
+            self.assertEqual(main(["meshtastic", "install", "--channel", "alpha"]), 2)
+        self.assertEqual(calls, ["package:alpha", "integration", "enable"])
 
     def test_normal_update_runs_combined_manager_and_meshtastic_path(self) -> None:
         with patch(
